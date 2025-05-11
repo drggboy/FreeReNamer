@@ -32,8 +32,9 @@ export interface FilesPanelProps {
 // 访问FileItem组件中的缩略图缓存对象
 declare global {
   interface Window {
-    __FILE_ITEM_REFS__?: Map<string, React.RefObject<FileItemHandle>>;
+    __FILE_ITEM_REFS__?: Map<string | FileSystemFileHandle, React.RefObject<FileItemHandle>>;
     __THUMBNAIL_CACHE__?: Map<string, string>;
+    __ALL_FILES__?: (string | FileSystemFileHandle)[];
   }
 }
 
@@ -72,7 +73,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const [currentWidths, setCurrentWidths] = useState<ColumnWidths>({...columnWidths});
   
   // 使用ref存储所有文件项的引用
-  const fileItemRefs = useRef<Map<string, React.RefObject<FileItemHandle>>>(new Map());
+  const fileItemRefs = useRef<Map<string | FileSystemFileHandle, React.RefObject<FileItemHandle>>>(new Map());
   // 记录当前有多少个待重命名的文件
   const [pendingRenameCount, setPendingRenameCount] = useState(0);
   
@@ -253,6 +254,17 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     // 更新待重命名计数
     updatePendingRenameCount();
   }, [files, updatePendingRenameCount]);
+
+  // 在useEffect中设置全局文件列表
+  useEffect(() => {
+    // 将文件列表设置为全局变量，以便规则执行时可以访问
+    window.__ALL_FILES__ = files;
+    
+    return () => {
+      // 组件卸载时清理全局变量
+      window.__ALL_FILES__ = undefined;
+    };
+  }, [files]);
 
   async function onAddFile() {
     const openFiles = await open({ multiple: true, directory: false });

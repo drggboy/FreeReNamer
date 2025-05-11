@@ -25,6 +25,7 @@ import { ResizableDivider } from '../ui/resizable-divider';
 declare global {
   interface Window {
     __THUMBNAIL_CACHE__?: Map<string, string>;
+    __ALL_FILES__?: (string | FileSystemFileHandle)[];
   }
 }
 
@@ -99,6 +100,17 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       clearThumbnailCache();
     }
   }, [files.length]);
+
+  // 在useEffect中设置全局文件列表
+  useEffect(() => {
+    // 将文件列表设置为全局变量，以便规则执行时可以访问
+    window.__ALL_FILES__ = files;
+    
+    return () => {
+      // 组件卸载时清理全局变量
+      window.__ALL_FILES__ = undefined;
+    };
+  }, [files]);
 
   const checked = useMemo(
     () => files.length > 0 && selectedFiles.length === files.length,

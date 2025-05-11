@@ -11,7 +11,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5, // 5分钟内数据被视为新鲜，不会重新获取
-      cacheTime: 1000 * 60 * 10, // 10分钟内数据保留在缓存中
+      gcTime: 1000 * 60 * 10, // 10分钟内数据保留在缓存中
     },
   },
 });
