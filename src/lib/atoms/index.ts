@@ -40,11 +40,11 @@ export interface ColumnWidths {
 
 // 默认栏目宽度配置
 export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
-  checkbox: 2,     // 2rem
-  index: 3,        // 3rem
-  filename: 36,    // 36%
-  time: 15,        // 15%
-  thumbnail: 10,   // 10%
+  checkbox: 3,     // 3rem
+  index: 5,        // 5rem
+  filename: 40,    // 40%
+  time: 20,        // 20%
+  thumbnail: 15,   // 15%
   preview: 1       // 1fr
 };
 

@@ -91,11 +91,29 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       if (column === 'checkbox' || column === 'index') {
         // rem为单位的列，直接转换像素为rem
         const remDelta = delta / PX_TO_REM;
-        newWidths[column] = Math.max(1, prev[column] + remDelta);
+        // 设置不同列的最小宽度
+        const minWidth = column === 'checkbox' ? 2 : 4;
+        newWidths[column] = Math.max(minWidth, prev[column] + remDelta);
       } else if (column === 'filename' || column === 'time' || column === 'thumbnail') {
         // 百分比为单位的列，将像素转换为百分比
         const percentDelta = (delta / containerWidth) * 100;
-        newWidths[column] = Math.max(5, Math.min(80, prev[column] + percentDelta));
+        // 设置不同列的最小宽度和最大宽度
+        let minWidth = 10; // 默认最小宽度为10%
+        let maxWidth = 80; // 默认最大宽度为80%
+        
+        // 根据列类型设置不同的最小宽度
+        if (column === 'filename') {
+          minWidth = 15; // 文件名最小15%
+          maxWidth = 60; // 文件名最大60%
+        } else if (column === 'time') {
+          minWidth = 10; // 时间最小10%
+          maxWidth = 30; // 时间最大30%
+        } else if (column === 'thumbnail') {
+          minWidth = 10; // 缩略图最小10%
+          maxWidth = 40; // 缩略图最大40%
+        }
+        
+        newWidths[column] = Math.max(minWidth, Math.min(maxWidth, prev[column] + percentDelta));
       }
       
       return newWidths;
