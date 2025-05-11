@@ -17,10 +17,39 @@ export async function getBasename(file: string, ext: string): Promise<string> {
   }
 }
 
-export async function getFileInfo(file: string): Promise<FileInfo> {
-  const ext = await getExt(file);
-  const name = await getBasename(file, ext);
-  const fullName = `${name}${ext}`;
+/**
+ * 格式化时间戳为可读的时间字符串
+ * @param timestamp - UNIX时间戳（毫秒）
+ * @returns 格式化后的时间字符串
+ */
+export function formatTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString();
+}
 
-  return { name, ext, fullName };
+/**
+ * 获取文件信息
+ * @param file - 文件句柄或路径
+ * @returns 文件信息对象，包含名称、扩展名和时间信息
+ */
+export async function getFileInfo(file: string | FileSystemFileHandle): Promise<FileInfo> {
+  let ext = '';
+  let name = '';
+  let timestamp: number | undefined;
+  
+  if (typeof file === 'string') {
+    ext = await getExt(file);
+    name = await getBasename(file, ext);
+  } else {
+    // 处理FileSystemFileHandle
+    const fileObj = await file.getFile();
+    name = fileObj.name.replace(/\.[^/.]+$/, ''); // 移除扩展名
+    ext = fileObj.name.match(/\.[^/.]+$/)?.[0] || '';
+    timestamp = fileObj.lastModified;
+  }
+  
+  const fullName = `${name}${ext}`;
+  const timeString = timestamp ? formatTimestamp(timestamp) : undefined;
+  
+  return { name, ext, fullName, timestamp, timeString };
 }

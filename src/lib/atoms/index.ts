@@ -10,6 +10,24 @@ export type FilesAtomTauri = PrimitiveAtom<string[]> &
 export type FilesAtomWeb = PrimitiveAtom<FileSystemFileHandle[]> &
   WithInitialValue<FileSystemFileHandle[]>;
 
+// 定义文件排序方式
+export type FileSortType = 'index' | 'name' | 'time';
+
+// 定义文件排序顺序
+export type FileSortOrder = 'asc' | 'desc';
+
+// 定义文件排序配置
+export interface FileSortConfig {
+  type: FileSortType;
+  order: FileSortOrder;
+}
+
+// 创建文件排序配置原子
+export const fileSortConfigAtom = atom<FileSortConfig>({
+  type: 'index',
+  order: 'asc'
+});
+
 export interface GlobalDialogInfo {
   opened: boolean;
   title?: ReactNode;

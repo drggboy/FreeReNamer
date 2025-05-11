@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, type FC } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, type FileSortConfig } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 
@@ -9,14 +9,15 @@ export interface FileItemProps {
   file: string;
   profileId: string;
   index: number;
+  sortConfig: FileSortConfig;
 }
 
-export const FileItem: FC<FileItemProps> = ({ file, profileId, index }) => {
+export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig }) => {
   const {
     data: fileItemInfo,
     error,
     isError,
-  } = useQuery(fileItemInfoQueryOptions(profileId, file, index));
+  } = useQuery(fileItemInfoQueryOptions(profileId, file, index, sortConfig));
 
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const selected = useMemo(
@@ -49,15 +50,18 @@ export const FileItem: FC<FileItemProps> = ({ file, profileId, index }) => {
   }
 
   return (
-    <div className="grid min-h-8 w-full grid-cols-[2rem_3rem_48%_1fr] divide-x break-all text-sm hover:bg-neutral-100">
+    <div className="grid min-h-8 w-full grid-cols-[2rem_3rem_36%_20%_1fr] divide-x break-all text-sm hover:bg-neutral-100">
       <div className="flex size-full items-center justify-center">
         <Checkbox checked={selected} onCheckedChange={onCheckedChange} />
       </div>
       <span className="flex size-full items-center justify-center px-2 py-1 text-neutral-700">
-        {index + 1}
+        {fileItemInfo.sortedIndex + 1}
       </span>
       <span className="flex size-full items-center px-2 py-1 text-neutral-700">
         {fileItemInfo.fileInfo.fullName}
+      </span>
+      <span className="flex size-full items-center px-2 py-1 text-neutral-700">
+        {fileItemInfo.fileInfo.timeString || '-'}
       </span>
       <span className="flex size-full items-center px-2 py-1 font-bold">
         {fileItemInfo.preview}

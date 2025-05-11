@@ -3,6 +3,7 @@
 
 use std::{ffi::OsStr, fs};
 use walkdir::WalkDir;
+use std::time::{UNIX_EPOCH, SystemTime};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -51,10 +52,37 @@ fn basename(path: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+#[tauri::command]
+fn get_file_time(path: &str) -> Result<u64, String> {
+    let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+    
+    // 尝试获取修改时间
+    if let Ok(time) = metadata.modified() {
+        if let Ok(duration) = time.duration_since(UNIX_EPOCH) {
+            return Ok(duration.as_secs());
+        }
+    }
+    
+    // 如果修改时间获取失败，尝试获取创建时间
+    if let Ok(time) = metadata.created() {
+        if let Ok(duration) = time.duration_since(UNIX_EPOCH) {
+            return Ok(duration.as_secs());
+        }
+    }
+    
+    // 如果都失败，返回当前时间
+    if let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) {
+        return Ok(duration.as_secs());
+    }
+    
+    // 最后的兜底
+    Ok(0)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            rename, exists, is_file, read_dir, basename
+            rename, exists, is_file, read_dir, basename, get_file_time
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .run(tauri::generate_context!())
