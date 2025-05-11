@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, type FC } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, type FileSortConfig } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, type FileSortConfig, type ColumnWidths } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 
@@ -10,9 +10,10 @@ export interface FileItemProps {
   profileId: string;
   index: number;
   sortConfig: FileSortConfig;
+  columnWidths: ColumnWidths;
 }
 
-export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig }) => {
+export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig, columnWidths }) => {
   const {
     data: fileItemInfo,
     error,
@@ -24,6 +25,12 @@ export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig
     () => selectedFiles.includes(file),
     [selectedFiles, file],
   );
+
+  // 根据当前列宽生成grid-template-columns样式
+  const gridTemplateColumns = useMemo(() => {
+    const { checkbox, index, filename, time, preview } = columnWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${preview}fr`;
+  }, [columnWidths]);
 
   function onCheckedChange(checked: boolean) {
     atomStore.set(selectedFilesAtom, (prev) => {
@@ -50,7 +57,10 @@ export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig
   }
 
   return (
-    <div className="grid min-h-8 w-full grid-cols-[2rem_3rem_36%_20%_1fr] divide-x break-all text-sm hover:bg-neutral-100">
+    <div 
+      className="grid min-h-8 w-full divide-x break-all text-sm hover:bg-neutral-100"
+      style={{ gridTemplateColumns }}
+    >
       <div className="flex size-full items-center justify-center">
         <Checkbox checked={selected} onCheckedChange={onCheckedChange} />
       </div>

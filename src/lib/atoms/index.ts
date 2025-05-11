@@ -28,6 +28,27 @@ export const fileSortConfigAtom = atom<FileSortConfig>({
   order: 'asc'
 });
 
+// 定义栏目宽度配置
+export interface ColumnWidths {
+  checkbox: number;  // 复选框列宽
+  index: number;     // 序号列宽
+  filename: number;  // 文件名列宽
+  time: number;      // 时间列宽
+  preview: number;   // 预览列宽
+}
+
+// 默认栏目宽度配置
+export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  checkbox: 2,     // 2rem
+  index: 3,        // 3rem
+  filename: 36,    // 36%
+  time: 20,        // 20%
+  preview: 1       // 1fr
+};
+
+// 创建栏目宽度配置原子
+export const columnWidthsAtom = atom<ColumnWidths>({...DEFAULT_COLUMN_WIDTHS});
+
 export interface GlobalDialogInfo {
   opened: boolean;
   title?: ReactNode;

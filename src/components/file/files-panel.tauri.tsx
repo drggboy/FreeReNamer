@@ -3,13 +3,16 @@ import {
   filesAtom,
   selectedFilesAtom,
   fileSortConfigAtom,
+  columnWidthsAtom,
+  DEFAULT_COLUMN_WIDTHS,
   type FilesAtomTauri,
   type FileSortType,
   type FileSortOrder,
+  type ColumnWidths,
 } from '@/lib/atoms';
 import { listen } from '@tauri-apps/api/event';
-import { useAtomValue } from 'jotai';
-import { useEffect, useMemo, type FC, useState } from 'react';
+import { useAtom, useAtomValue } from 'jotai';
+import { useEffect, useMemo, type FC, useState, useRef, useCallback } from 'react';
 import { FileItem } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
@@ -18,31 +21,106 @@ import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
+import { ResizableDivider } from '../ui/resizable-divider';
 
 export interface FilesPanelProps {
   profileId: string;
 }
 
+// 像素到rem的转换比例
+const PX_TO_REM = 16; // 假设1rem = 16px
+
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const files = useAtomValue(filesAtom as FilesAtomTauri);
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const sortConfig = useAtomValue(fileSortConfigAtom);
+  const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
+  // 标记是否正在调整列宽
+  const [isResizing, setIsResizing] = useState(false);
+  
+  // 使用ref保存容器元素，用于计算百分比宽度
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // 当前列宽，用于暂存拖动过程中的列宽
+  const [currentWidths, setCurrentWidths] = useState<ColumnWidths>({...columnWidths});
+  
+  // 同步全局状态和本地状态
+  useEffect(() => {
+    if (!isResizing) {
+      setCurrentWidths({...columnWidths});
+    }
+  }, [columnWidths, isResizing]);
 
   const checked = useMemo(
     () => files.length > 0 && selectedFiles.length === files.length,
     [selectedFiles, files],
   );
 
+  // 根据当前列宽生成grid-template-columns样式
+  const gridTemplateColumns = useMemo(() => {
+    const { checkbox, index, filename, time, preview } = currentWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${preview}fr`;
+  }, [currentWidths]);
+
+  // 获取容器宽度
+  const getContainerWidth = useCallback(() => {
+    if (!containerRef.current) return 1000; // 默认值
+    return containerRef.current.getBoundingClientRect().width;
+  }, []);
+
+  // 调整列宽的处理函数
+  const handleResizeColumn = useCallback((column: keyof ColumnWidths, delta: number) => {
+    setCurrentWidths(prev => {
+      const newWidths = { ...prev };
+      const containerWidth = getContainerWidth();
+      
+      // 根据不同列类型应用不同的调整逻辑
+      if (column === 'checkbox' || column === 'index') {
+        // rem为单位的列，直接转换像素为rem
+        const remDelta = delta / PX_TO_REM;
+        newWidths[column] = Math.max(1, prev[column] + remDelta);
+      } else if (column === 'filename' || column === 'time') {
+        // 百分比为单位的列，将像素转换为百分比
+        const percentDelta = (delta / containerWidth) * 100;
+        newWidths[column] = Math.max(10, Math.min(80, prev[column] + percentDelta));
+      }
+      
+      return newWidths;
+    });
+  }, [getContainerWidth]);
+  
+  // 拖动开始时标记状态
+  const handleResizeStart = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+  
+  // 拖动结束时保存列宽到全局状态
+  const handleResizeEnd = useCallback(() => {
+    setColumnWidths(currentWidths);
+    // 延迟重置状态，避免影响其他组件更新
+    setTimeout(() => {
+      setIsResizing(false);
+    }, 100);
+  }, [currentWidths, setColumnWidths]);
+
+  // 重置列宽到默认值
+  const resetColumnWidths = useCallback(() => {
+    setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS });
+  }, [setColumnWidths]);
+
   // 当文件列表或排序配置变化时，重新计算排序顺序
   useEffect(() => {
+    // 如果正在调整列宽，不重新计算排序
+    if (isResizing) return;
+    
     async function updateSortOrder() {
       const indices = await getSortedFileIndices(files, sortConfig);
       setSortedIndices(indices);
     }
     
     updateSortOrder();
-  }, [files, sortConfig]);
+  }, [files, sortConfig, isResizing]);
 
   // 将文件数组按排序后的顺序排列
   const sortedFiles = useMemo(() => {
@@ -55,7 +133,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   async function onAddFile() {
     const openFiles = await open({ multiple: true, directory: false });
-    window.showOpenFilePicker();
 
     if (!Array.isArray(openFiles)) {
       return;
@@ -99,6 +176,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 更改排序方式
   function changeSortType(type: FileSortType) {
+    // 如果正在调整列宽，不改变排序
+    if (isResizing) return;
+    
     atomStore.set(fileSortConfigAtom, (prev) => {
       // 如果点击当前排序列，切换排序顺序
       if (prev.type === type) {
@@ -169,6 +249,14 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           <Button size="sm" onClick={onAddDir}>
             添加文件夹
           </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={resetColumnWidths}
+            title="重置列宽"
+          >
+            重置列宽
+          </Button>
         </div>
         <div className="flex items-center">
           {selectedFiles.length > 0 && (
@@ -178,39 +266,72 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           )}
         </div>
       </div>
-      <div className="grid h-8 w-full grid-cols-[2rem_3rem_36%_20%_1fr] divide-x divide-neutral-300 rounded-t border border-b-0 bg-neutral-200 text-sm">
-        <div className="flex size-full items-center justify-center">
+      
+      <div 
+        ref={containerRef}
+        className="grid h-8 w-full divide-x divide-neutral-300 rounded-t border border-b-0 bg-neutral-200 text-sm"
+        style={{ gridTemplateColumns }}
+      >
+        <div className="flex size-full items-center justify-center relative">
           <Checkbox checked={checked} onCheckedChange={onCheckedChange} />
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('checkbox', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
         </div>
-        <span 
-          className="flex size-full items-center justify-center px-2 cursor-pointer"
+        
+        <span className="flex size-full items-center justify-center px-2 cursor-pointer relative"
           onClick={() => changeSortType('index')}
         >
           <span className="flex items-center gap-1">
             序号
             {renderSortIcon('index')}
           </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('index', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
         </span>
-        <span 
-          className="flex size-full items-center px-2 cursor-pointer"
+        
+        <span className="flex size-full items-center px-2 cursor-pointer relative"
           onClick={() => changeSortType('name')}
         >
           <span className="flex items-center gap-1">
             文件名
             {renderSortIcon('name')}
           </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('filename', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
         </span>
-        <span 
-          className="flex size-full items-center px-2 cursor-pointer"
+        
+        <span className="flex size-full items-center px-2 cursor-pointer relative"
           onClick={() => changeSortType('time')}
         >
           <span className="flex items-center gap-1">
             时间
             {renderSortIcon('time')}
           </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('time', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
         </span>
-        <span className="flex size-full items-center px-2">预览</span>
+        
+        <span className="flex size-full items-center px-2">
+          预览
+        </span>
       </div>
+      
       <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
           {sortedFiles.map((file, i) => {
@@ -223,6 +344,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
                 profileId={profileId}
                 index={originalIndex}
                 sortConfig={sortConfig}
+                columnWidths={currentWidths}
               />
             );
           })}
