@@ -28,6 +28,16 @@ export function formatTimestamp(timestamp: number): string {
 }
 
 /**
+ * 检查文件是否为图片
+ * @param ext - 文件扩展名（带点，如 .jpg）
+ * @returns 是否为图片文件
+ */
+export function isImageFile(ext: string): boolean {
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.svg', '.avif'];
+  return imageExtensions.includes(ext.toLowerCase());
+}
+
+/**
  * 获取文件信息
  * @param file - 文件句柄或路径
  * @returns 文件信息对象，包含名称、扩展名和时间信息
@@ -50,6 +60,7 @@ export async function getFileInfo(file: string | FileSystemFileHandle): Promise<
   
   const fullName = `${name}${ext}`;
   const timeString = timestamp ? formatTimestamp(timestamp) : undefined;
+  const isImage = isImageFile(ext);
   
-  return { name, ext, fullName, timestamp, timeString };
+  return { name, ext, fullName, timestamp, timeString, isImage };
 }

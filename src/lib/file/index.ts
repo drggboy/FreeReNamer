@@ -16,3 +16,25 @@ export async function getFileInfo(file: string): Promise<FileInfo> {
 
   throw new Error('Not Implemented');
 }
+
+/**
+ * 根据文件扩展名获取对应的MIME类型
+ * @param ext - 文件扩展名（带点，如 .jpg）
+ * @returns MIME类型字符串
+ */
+export function getMimeType(ext: string): string {
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.webp': 'image/webp',
+    '.tiff': 'image/tiff',
+    '.tif': 'image/tiff',
+    '.svg': 'image/svg+xml',
+    '.avif': 'image/avif'
+  };
+
+  return mimeTypes[ext.toLowerCase()] || 'application/octet-stream';
+}

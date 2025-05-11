@@ -34,6 +34,7 @@ export interface ColumnWidths {
   index: number;     // 序号列宽
   filename: number;  // 文件名列宽
   time: number;      // 时间列宽
+  thumbnail: number; // 缩略图列宽
   preview: number;   // 预览列宽
 }
 
@@ -42,7 +43,8 @@ export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   checkbox: 2,     // 2rem
   index: 3,        // 3rem
   filename: 36,    // 36%
-  time: 20,        // 20%
+  time: 15,        // 15%
+  thumbnail: 10,   // 10%
   preview: 1       // 1fr
 };
 
@@ -73,3 +75,6 @@ export const globalAlertInfoAtom = atom<GlobalAlertInfo>({
 });
 
 export const selectedFilesAtom = atom<string[]>([]);
+
+// 自定义图片查看器应用路径
+export const imageViewerAppAtom = atom<string | null>(null);

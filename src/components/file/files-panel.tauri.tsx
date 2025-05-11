@@ -5,6 +5,7 @@ import {
   fileSortConfigAtom,
   columnWidthsAtom,
   DEFAULT_COLUMN_WIDTHS,
+  imageViewerAppAtom,
   type FilesAtomTauri,
   type FileSortType,
   type FileSortOrder,
@@ -19,7 +20,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 
@@ -35,6 +36,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const sortConfig = useAtomValue(fileSortConfigAtom);
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
+  const [imageViewerApp, setImageViewerApp] = useAtom(imageViewerAppAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
@@ -59,8 +61,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
-    const { checkbox, index, filename, time, preview } = currentWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${preview}fr`;
+    const { checkbox, index, filename, time, thumbnail, preview } = currentWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
   }, [currentWidths]);
 
   // 获取容器宽度
@@ -80,10 +82,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         // rem为单位的列，直接转换像素为rem
         const remDelta = delta / PX_TO_REM;
         newWidths[column] = Math.max(1, prev[column] + remDelta);
-      } else if (column === 'filename' || column === 'time') {
+      } else if (column === 'filename' || column === 'time' || column === 'thumbnail') {
         // 百分比为单位的列，将像素转换为百分比
         const percentDelta = (delta / containerWidth) * 100;
-        newWidths[column] = Math.max(10, Math.min(80, prev[column] + percentDelta));
+        newWidths[column] = Math.max(5, Math.min(80, prev[column] + percentDelta));
       }
       
       return newWidths;
@@ -108,6 +110,36 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const resetColumnWidths = useCallback(() => {
     setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS });
   }, [setColumnWidths]);
+
+  // 选择图片查看器应用
+  const selectImageViewer = useCallback(async () => {
+    try {
+      const selectedApp = await open({
+        multiple: false,
+        directory: false,
+        title: "选择图片查看器",
+        filters: [
+          {
+            name: "可执行文件",
+            extensions: ["exe", "app", "bat", "cmd", "sh"]
+          }
+        ]
+      });
+
+      if (selectedApp && typeof selectedApp === 'string') {
+        setImageViewerApp(selectedApp);
+        console.log('已设置图片查看器:', selectedApp);
+      }
+    } catch (error) {
+      console.error('选择图片查看器失败:', error);
+    }
+  }, [setImageViewerApp]);
+
+  // 清除图片查看器设置
+  const clearImageViewer = useCallback(() => {
+    setImageViewerApp(null);
+    console.log('已清除图片查看器设置');
+  }, [setImageViewerApp]);
 
   // 当文件列表或排序配置变化时，重新计算排序顺序
   useEffect(() => {
@@ -257,6 +289,30 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           >
             重置列宽
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={selectImageViewer}
+            title={imageViewerApp ? `当前图片查看器: ${imageViewerApp}` : "设置图片查看器"}
+            className="flex items-center gap-1"
+          >
+            <Settings className="h-4 w-4" />
+            {imageViewerApp ? "更改" : "设置"} 
+            {imageViewerApp && (
+              <Button
+                variant="ghost" 
+                size="sm"
+                className="h-5 px-1 py-0 text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearImageViewer();
+                }}
+                title="清除图片查看器设置"
+              >
+                ×
+              </Button>
+            )}
+          </Button>
         </div>
         <div className="flex items-center">
           {selectedFiles.length > 0 && (
@@ -323,6 +379,18 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             className="absolute right-0 h-full"
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResizeColumn('time', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
+        </span>
+        
+        <span className="flex size-full items-center px-2 relative">
+          <span className="flex items-center gap-1">
+            缩略图
+          </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('thumbnail', delta)}
             onResizeEnd={handleResizeEnd}
           />
         </span>

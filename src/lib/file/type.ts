@@ -4,4 +4,5 @@ export interface FileInfo {
   fullName: string;
   timestamp?: number; // 文件时间戳
   timeString?: string; // 格式化后的时间字符串
+  isImage?: boolean; // 是否是图片文件
 }

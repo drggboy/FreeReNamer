@@ -17,7 +17,7 @@ import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
 import { uniqBy } from 'lodash-es';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 
@@ -71,8 +71,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
-    const { checkbox, index, filename, time, preview } = currentWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${preview}fr`;
+    const { checkbox, index, filename, time, thumbnail, preview } = currentWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
   }, [currentWidths]);
 
   // 获取容器宽度
@@ -92,10 +92,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         // rem为单位的列，直接转换像素为rem
         const remDelta = delta / PX_TO_REM;
         newWidths[column] = Math.max(1, prev[column] + remDelta);
-      } else if (column === 'filename' || column === 'time') {
+      } else if (column === 'filename' || column === 'time' || column === 'thumbnail') {
         // 百分比为单位的列，将像素转换为百分比
         const percentDelta = (delta / containerWidth) * 100;
-        newWidths[column] = Math.max(10, Math.min(80, prev[column] + percentDelta));
+        newWidths[column] = Math.max(5, Math.min(80, prev[column] + percentDelta));
       }
       
       return newWidths;
@@ -270,6 +270,16 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           >
             重置列宽
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            title="在Web环境下，双击图片会在新标签页中打开"
+            className="flex items-center gap-1"
+            disabled
+          >
+            <Settings className="h-4 w-4" />
+            图片查看器
+          </Button>
         </div>
         <div className="flex items-center">
           {selectedFiles.length > 0 && (
@@ -336,6 +346,18 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             className="absolute right-0 h-full"
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResizeColumn('time', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
+        </span>
+        
+        <span className="flex size-full items-center px-2 relative">
+          <span className="flex items-center gap-1">
+            缩略图
+          </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('thumbnail', delta)}
             onResizeEnd={handleResizeEnd}
           />
         </span>

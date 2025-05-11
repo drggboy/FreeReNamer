@@ -4,6 +4,7 @@
 use std::{ffi::OsStr, fs};
 use walkdir::WalkDir;
 use std::time::{UNIX_EPOCH, SystemTime};
+use std::process::Command;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -79,10 +80,70 @@ fn get_file_time(path: &str) -> Result<u64, String> {
     Ok(0)
 }
 
+/// 使用系统默认应用打开文件
+#[tauri::command]
+fn open_with_default_app(path: &str) -> Result<(), String> {
+    let path_obj = std::path::Path::new(path);
+    
+    if !path_obj.exists() {
+        return Err(format!("文件不存在: {}", path));
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        // 在Windows上使用ShellExecute等效命令启动默认程序
+        Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", path])
+            .spawn()
+            .map_err(|e| format!("无法打开文件: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开文件: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开文件: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+/// 使用指定的应用程序打开文件
+#[tauri::command]
+fn open_with_custom_app(app_path: &str, file_path: &str) -> Result<(), String> {
+    let app_path_obj = std::path::Path::new(app_path);
+    let file_path_obj = std::path::Path::new(file_path);
+    
+    if !app_path_obj.exists() {
+        return Err(format!("应用程序不存在: {}", app_path));
+    }
+    
+    if !file_path_obj.exists() {
+        return Err(format!("文件不存在: {}", file_path));
+    }
+    
+    Command::new(app_path)
+        .arg(file_path)
+        .spawn()
+        .map_err(|e| format!("无法使用指定应用程序打开文件: {}", e))?;
+    
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            rename, exists, is_file, read_dir, basename, get_file_time
+            rename, exists, is_file, read_dir, basename, get_file_time,
+            open_with_default_app, open_with_custom_app
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .run(tauri::generate_context!())
