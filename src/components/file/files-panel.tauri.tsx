@@ -29,15 +29,31 @@ export interface FilesPanelProps {
   profileId: string;
 }
 
-// 像素到rem的转换比例
-const PX_TO_REM = 16; // 假设1rem = 16px
-
-// 定义全局变量类型
+// 访问FileItem组件中的缩略图缓存对象
 declare global {
   interface Window {
     __FILE_ITEM_REFS__?: Map<string, React.RefObject<FileItemHandle>>;
+    __THUMBNAIL_CACHE__?: Map<string, string>;
   }
 }
+
+// 用于清理缩略图缓存
+function clearThumbnailCache() {
+  const cache = window.__THUMBNAIL_CACHE__;
+  if (cache) {
+    // 释放所有blob URL
+    for (const url of cache.values()) {
+      if (url && url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    cache.clear();
+    console.log('清理了缩略图缓存');
+  }
+}
+
+// 像素到rem的转换比例
+const PX_TO_REM = 16; // 假设1rem = 16px
 
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const files = useAtomValue(filesAtom as FilesAtomTauri);
@@ -279,6 +295,11 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       prevFiles.filter((file) => !selectedFiles.includes(file)),
     );
     atomStore.set(selectedFilesAtom, []);
+    
+    // 如果删除后文件列表为空，清理缩略图缓存
+    if (selectedFiles.length === files.length) {
+      clearThumbnailCache();
+    }
   }
   
   // 更改排序方式
@@ -345,6 +366,20 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       unlisten?.();
     };
   }, []);
+
+  // 当组件卸载时清理缓存
+  useEffect(() => {
+    return () => {
+      clearThumbnailCache();
+    };
+  }, []);
+
+  // 当文件列表清空时清理缓存
+  useEffect(() => {
+    if (files.length === 0) {
+      clearThumbnailCache();
+    }
+  }, [files.length]);
 
   return (
     <div className="size-full">
@@ -525,3 +560,4 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 };
 
 export default FilesPanel;
+

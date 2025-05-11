@@ -21,6 +21,28 @@ import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 
+// 访问FileItem组件中的缩略图缓存对象
+declare global {
+  interface Window {
+    __THUMBNAIL_CACHE__?: Map<string, string>;
+  }
+}
+
+// 用于清理缩略图缓存
+function clearThumbnailCache() {
+  const cache = window.__THUMBNAIL_CACHE__;
+  if (cache) {
+    // 释放所有blob URL
+    for (const url of cache.values()) {
+      if (url && url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    cache.clear();
+    console.log('清理了缩略图缓存');
+  }
+}
+
 async function getAllFiles(directoryHandle: FileSystemDirectoryHandle) {
   const fileHandles: FileSystemFileHandle[] = [];
 
@@ -63,6 +85,20 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       setCurrentWidths({...columnWidths});
     }
   }, [columnWidths, isResizing]);
+
+  // 当组件卸载时清理缓存
+  useEffect(() => {
+    return () => {
+      clearThumbnailCache();
+    };
+  }, []);
+
+  // 当文件列表清空时清理缓存
+  useEffect(() => {
+    if (files.length === 0) {
+      clearThumbnailCache();
+    }
+  }, [files.length]);
 
   const checked = useMemo(
     () => files.length > 0 && selectedFiles.length === files.length,
@@ -196,6 +232,11 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       prevFiles.filter((file) => !selectedFiles.includes(file.name)),
     );
     atomStore.set(selectedFilesAtom, []);
+    
+    // 如果删除后文件列表为空，清理缩略图缓存
+    if (selectedFiles.length === files.length) {
+      clearThumbnailCache();
+    }
   }
   
   // 更改排序方式

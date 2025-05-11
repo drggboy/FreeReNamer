@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, type FC, useCallback, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { useMemo, type FC, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
 import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
@@ -8,6 +8,7 @@ import { Image, ExternalLink, Lock, X } from 'lucide-react';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
 import path from 'path-browserify';
+import { cn } from '@/lib/utils';
 
 export interface FileItemProps {
   file: string;
@@ -23,7 +24,16 @@ export interface FileItemHandle {
   hasPendingRename: () => boolean;
 }
 
-export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, onPendingStateChange }, ref) => {
+// 创建全局缩略图缓存对象
+const thumbnailCache = new Map<string, string>();
+
+// 将缓存对象放入window，以便在其他组件中访问
+if (typeof window !== 'undefined') {
+  window.__THUMBNAIL_CACHE__ = thumbnailCache;
+}
+
+// 使用memo包装组件，避免不必要的重新渲染
+export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, onPendingStateChange }, ref) => {
   const {
     data: fileItemInfo,
     error,
@@ -173,6 +183,13 @@ export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profi
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
     if (!fileItemInfo?.fileInfo.isImage) return null;
     
+    // 首先检查缓存中是否已有此文件的缩略图
+    const cacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
+    if (thumbnailCache.has(cacheKey)) {
+      console.log('使用缓存的缩略图:', file);
+      return thumbnailCache.get(cacheKey) || null;
+    }
+
     try {
       // 检查是否在Tauri环境
       // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
@@ -198,34 +215,42 @@ export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profi
             
             const dataUrl = `data:${mimeType};base64,${base64Content}`;
             console.log('Tauri图片URL(base64):', dataUrl.substring(0, 50) + '...');
+            
+            // 保存到缓存
+            thumbnailCache.set(cacheKey, dataUrl);
             return dataUrl;
           } catch (readError) {
             console.warn('读取文件内容失败，使用convertFileSrc:', readError);
+            // 保存到缓存
+            thumbnailCache.set(cacheKey, url);
             return url;
           }
         } catch (err) {
           console.error('Tauri读取图片错误:', err);
           throw err;
         }
+      }
+      // Web环境
+      if (typeof file === 'string') {
+        console.log('Web图片URL(字符串):', file);
+        // 保存到缓存
+        thumbnailCache.set(cacheKey, file);
+        return file;
       } else {
-        // Web环境
-        if (typeof file === 'string') {
-          console.log('Web图片URL(字符串):', file);
-          return file;
-        } else {
-          // 如果是FileSystemFileHandle
-          const fileHandle = file as unknown as FileSystemFileHandle;
-          const fileObj = await fileHandle.getFile();
-          const url = URL.createObjectURL(fileObj);
-          console.log('Web图片URL(对象):', url);
-          return url;
-        }
+        // 如果是FileSystemFileHandle
+        const fileHandle = file as unknown as FileSystemFileHandle;
+        const fileObj = await fileHandle.getFile();
+        const url = URL.createObjectURL(fileObj);
+        console.log('Web图片URL(对象):', url);
+        // 保存到缓存
+        thumbnailCache.set(cacheKey, url);
+        return url;
       }
     } catch (error) {
       console.error('获取缩略图URL失败:', error);
       return null;
     }
-  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.ext]);
+  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.fullName]);
 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [thumbnailError, setThumbnailError] = useState(false);
@@ -236,26 +261,38 @@ export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profi
     let mounted = true;
     
     if (fileItemInfo?.fileInfo.isImage) {
-      setThumbnailLoading(true);
-      setThumbnailError(false);
+      // 检查缓存中是否已有此文件的缩略图
+      const cacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
+      const cachedUrl = thumbnailCache.get(cacheKey);
       
-      getThumbnailUrl()
-        .then(url => {
-          if (mounted && url) {
-            setThumbnailUrl(url);
-          }
-        })
-        .catch(err => {
-          console.error('缩略图加载错误:', err);
-          if (mounted) {
-            setThumbnailError(true);
-          }
-        })
-        .finally(() => {
-          if (mounted) {
-            setThumbnailLoading(false);
-          }
-        });
+      if (cachedUrl) {
+        // 如果缓存中有，直接使用
+        setThumbnailUrl(cachedUrl);
+        setThumbnailLoading(false);
+        setThumbnailError(false);
+      } else {
+        // 否则加载新的缩略图
+        setThumbnailLoading(true);
+        setThumbnailError(false);
+        
+        getThumbnailUrl()
+          .then(url => {
+            if (mounted && url) {
+              setThumbnailUrl(url);
+            }
+          })
+          .catch(err => {
+            console.error('缩略图加载错误:', err);
+            if (mounted) {
+              setThumbnailError(true);
+            }
+          })
+          .finally(() => {
+            if (mounted) {
+              setThumbnailLoading(false);
+            }
+          });
+      }
     } else {
       setThumbnailUrl(null);
       setThumbnailError(false);
@@ -265,12 +302,9 @@ export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profi
     return () => {
       mounted = false;
       
-      // 只有blob URL需要释放，data URL和文件路径URL不需要释放
-      if (thumbnailUrl && thumbnailUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(thumbnailUrl);
-      }
+      // 注意：不再在每次组件卸载时释放URL，而是在应用关闭或清理缓存时统一处理
     };
-  }, [fileItemInfo?.fileInfo.isImage, getThumbnailUrl]);
+  }, [fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.fullName, file, getThumbnailUrl]);
 
   // 处理图片点击事件，打开图片文件
   const handleImageClick = useCallback(async () => {
@@ -461,5 +495,14 @@ export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profi
         )}
       </span>
     </div>
+  );
+}), (prevProps, nextProps) => {
+  // 自定义比较函数，决定是否重新渲染组件
+  return (
+    prevProps.file === nextProps.file &&
+    prevProps.profileId === nextProps.profileId &&
+    prevProps.index === nextProps.index &&
+    JSON.stringify(prevProps.sortConfig) === JSON.stringify(nextProps.sortConfig) &&
+    JSON.stringify(prevProps.columnWidths) === JSON.stringify(nextProps.columnWidths)
   );
 });
