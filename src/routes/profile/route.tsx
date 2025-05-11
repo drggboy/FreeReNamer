@@ -12,6 +12,7 @@ import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { showConfirm } from '@/lib/ui';
+import { toast } from 'sonner';
 
 export const Route = createFileRoute('/profile')({
   component: Component,
@@ -44,7 +45,36 @@ function Component() {
     mutationFn: async (profileId: string) => {
       const profile = await getProfile(profileId);
       const files = atomStore.get(filesAtom);
-
+      
+      // 首先尝试执行所有待处理的手动修改
+      let manualRenamedCount = 0;
+      
+      try {
+        // 获取所有待重命名的文件项引用
+        const fileItemRefs = window.__FILE_ITEM_REFS__;
+        if (fileItemRefs) {
+          // 执行所有待处理的手动修改
+          const promises = Array.from(fileItemRefs.entries()).map(async ([file, ref]) => {
+            if (ref.current?.hasPendingRename && ref.current.hasPendingRename()) {
+              const success = await ref.current.executeRename();
+              if (success) {
+                manualRenamedCount++;
+              }
+            }
+          });
+          
+          await Promise.all(promises);
+          
+          // 显示手动重命名结果
+          if (manualRenamedCount > 0) {
+            toast.success(`已应用 ${manualRenamedCount} 个手动修改`);
+          }
+        }
+      } catch (error) {
+        console.error('执行手动修改失败:', error);
+      }
+      
+      // 然后执行规则重命名
       for (let i = 0, len = files.length; i < len; i++) {
         const file = files[i];
         const fileInfo = await getFileInfo(

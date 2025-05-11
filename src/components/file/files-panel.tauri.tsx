@@ -13,8 +13,8 @@ import {
 } from '@/lib/atoms';
 import { listen } from '@tauri-apps/api/event';
 import { useAtom, useAtomValue } from 'jotai';
-import { useEffect, useMemo, type FC, useState, useRef, useCallback } from 'react';
-import { FileItem } from './file-item';
+import React, { useEffect, useMemo, type FC, useState, useRef, useCallback, createRef } from 'react';
+import { FileItem, type FileItemHandle } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { open } from '@tauri-apps/api/dialog';
@@ -23,6 +23,7 @@ import { Checkbox } from '../ui/checkbox';
 import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
+import { toast } from 'sonner';
 
 export interface FilesPanelProps {
   profileId: string;
@@ -30,6 +31,13 @@ export interface FilesPanelProps {
 
 // 像素到rem的转换比例
 const PX_TO_REM = 16; // 假设1rem = 16px
+
+// 定义全局变量类型
+declare global {
+  interface Window {
+    __FILE_ITEM_REFS__?: Map<string, React.RefObject<FileItemHandle>>;
+  }
+}
 
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const files = useAtomValue(filesAtom as FilesAtomTauri);
@@ -47,6 +55,11 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 当前列宽，用于暂存拖动过程中的列宽
   const [currentWidths, setCurrentWidths] = useState<ColumnWidths>({...columnWidths});
   
+  // 使用ref存储所有文件项的引用
+  const fileItemRefs = useRef<Map<string, React.RefObject<FileItemHandle>>>(new Map());
+  // 记录当前有多少个待重命名的文件
+  const [pendingRenameCount, setPendingRenameCount] = useState(0);
+  
   // 同步全局状态和本地状态
   useEffect(() => {
     if (!isResizing) {
@@ -61,8 +74,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
-    const { checkbox, index, filename, time, thumbnail, preview } = currentWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
+    const { checkbox, index, filename, time, thumbnail, preview, manual } = currentWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr ${manual}%`;
   }, [currentWidths]);
 
   // 获取容器宽度
@@ -84,7 +97,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         // 设置不同列的最小宽度
         const minWidth = column === 'checkbox' ? 2 : 5;
         newWidths[column] = Math.max(minWidth, prev[column] + remDelta);
-      } else if (column === 'filename' || column === 'time' || column === 'thumbnail') {
+      } else if (column === 'filename' || column === 'time' || column === 'thumbnail' || column === 'manual') {
         // 百分比为单位的列，将像素转换为百分比
         const percentDelta = (delta / containerWidth) * 100;
         // 设置不同列的最小宽度和最大宽度
@@ -101,9 +114,18 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         } else if (column === 'thumbnail') {
           minWidth = 10; // 缩略图最小10%
           maxWidth = 40; // 缩略图最大40%
+        } else if (column === 'manual') {
+          minWidth = 15; // 手动修改最小15%
+          maxWidth = 50; // 手动修改最大50%
         }
         
         newWidths[column] = Math.max(minWidth, Math.min(maxWidth, prev[column] + percentDelta));
+      } else if (column === 'preview') {
+        // preview列使用fr单位，需要特殊处理
+        // 我们暂时将其视为百分比，但实际渲染时仍使用fr
+        const percentDelta = (delta / containerWidth) * 100;
+        // fr值应该保持较小，这里我们将其限制在0.5到5之间
+        newWidths[column] = Math.max(0.5, Math.min(5, prev[column] + percentDelta / 50));
       }
       
       return newWidths;
@@ -180,6 +202,41 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     
     return sortedIndices.map(index => files[index]);
   }, [files, sortedIndices]);
+
+  // 更新待重命名文件计数
+  const updatePendingRenameCount = useCallback(() => {
+    let count = 0;
+    fileItemRefs.current.forEach((ref) => {
+      if (ref.current?.hasPendingRename()) {
+        count++;
+      }
+    });
+    setPendingRenameCount(count);
+  }, []);
+  
+  // 将fileItemRefs设置为全局变量，以便route.tsx可以访问
+  useEffect(() => {
+    window.__FILE_ITEM_REFS__ = fileItemRefs.current;
+    
+    return () => {
+      // 组件卸载时清理全局变量
+      window.__FILE_ITEM_REFS__ = undefined;
+    };
+  }, []);
+  
+  // 当文件列表变化时重新创建refs
+  useEffect(() => {
+    // 清除旧的refs
+    fileItemRefs.current.clear();
+    
+    // 为每个文件创建新的ref
+    files.forEach((file) => {
+      fileItemRefs.current.set(file, createRef<FileItemHandle>());
+    });
+    
+    // 更新待重命名计数
+    updatePendingRenameCount();
+  }, [files, updatePendingRenameCount]);
 
   async function onAddFile() {
     const openFiles = await open({ multiple: true, directory: false });
@@ -332,7 +389,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             )}
           </Button>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-x-2">
           {selectedFiles.length > 0 && (
             <Button size="sm" onClick={onRemove}>
               移除
@@ -413,8 +470,27 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           />
         </span>
         
-        <span className="flex size-full items-center px-2">
+        <span className="flex size-full items-center px-2 relative">
           预览
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('preview', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
+        </span>
+        
+        <span className="flex size-full items-center px-2 relative">
+          <span className="flex items-center gap-1">
+            手动修改
+            <div className="ml-1 text-xs text-neutral-500" title="点击可编辑文件名，Enter键确认，Esc键取消">(?)</div>
+          </span>
+          <ResizableDivider 
+            className="absolute right-0 h-full"
+            onResizeStart={handleResizeStart}
+            onResize={(delta) => handleResizeColumn('manual', delta)}
+            onResizeEnd={handleResizeEnd}
+          />
         </span>
       </div>
       
@@ -423,14 +499,22 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           {sortedFiles.map((file, i) => {
             // 找到原始索引
             const originalIndex = files.indexOf(file);
+            // 获取或创建ref
+            const ref = fileItemRefs.current.get(file) || createRef<FileItemHandle>();
+            if (!fileItemRefs.current.has(file)) {
+              fileItemRefs.current.set(file, ref);
+            }
+            
             return (
               <FileItem
                 key={file}
+                ref={ref}
                 file={file}
                 profileId={profileId}
                 index={originalIndex}
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
+                onPendingStateChange={updatePendingRenameCount}
               />
             );
           })}

@@ -36,16 +36,18 @@ export interface ColumnWidths {
   time: number;      // 时间列宽
   thumbnail: number; // 缩略图列宽
   preview: number;   // 预览列宽
+  manual: number;    // 手动修改列宽
 }
 
 // 默认栏目宽度配置
 export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   checkbox: 3,     // 3rem
   index: 5,        // 5rem
-  filename: 40,    // 40%
-  time: 20,        // 20%
+  filename: 35,    // 35%
+  time: 15,        // 15%
   thumbnail: 15,   // 15%
-  preview: 1       // 1fr
+  preview: 1,      // 1fr
+  manual: 20       // 20%
 };
 
 // 创建栏目宽度配置原子

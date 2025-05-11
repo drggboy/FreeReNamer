@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, type FC, useCallback, useState, useEffect } from 'react';
+import { useMemo, type FC, useCallback, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, imageViewerAppAtom, type FileSortConfig, type ColumnWidths } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
-import { Image, ExternalLink } from 'lucide-react';
+import { Image, ExternalLink, Lock, X } from 'lucide-react';
+import { Input } from '../ui/input';
+import { toast } from 'sonner';
+import path from 'path-browserify';
 
 export interface FileItemProps {
   file: string;
@@ -12,9 +15,15 @@ export interface FileItemProps {
   index: number;
   sortConfig: FileSortConfig;
   columnWidths: ColumnWidths;
+  onPendingStateChange?: () => void;
 }
 
-export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig, columnWidths }) => {
+export interface FileItemHandle {
+  executeRename: () => Promise<boolean>;
+  hasPendingRename: () => boolean;
+}
+
+export const FileItem = forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, onPendingStateChange }, ref) => {
   const {
     data: fileItemInfo,
     error,
@@ -28,10 +37,136 @@ export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig
     [selectedFiles, file],
   );
 
+  // 手动修改文件名相关状态
+  const [manualName, setManualName] = useState<string>("");
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [hasChanges, setHasChanges] = useState<boolean>(false);
+  // 标记是否已锁定修改（待执行）
+  const [isPendingRename, setIsPendingRename] = useState<boolean>(false);
+  
+  // 确认修改（实际执行重命名）- 此方法由外部"执行"按钮调用
+  const handleConfirmEdit = useCallback(async () => {
+    if (!manualName.trim() || !fileItemInfo || manualName === fileItemInfo.fileInfo.fullName || !isPendingRename) {
+      return false;
+    }
+
+    try {
+      // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
+      if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
+        // Tauri环境下实现重命名
+        const { invoke } = await import('@tauri-apps/api');
+        const { dirname, join } = await import('@tauri-apps/api/path');
+        
+        // 获取目录路径
+        const dirPath = await dirname(file);
+        // 新的完整路径
+        const newPath = await join(dirPath, manualName);
+        
+        // 调用Tauri后端进行重命名
+        const result = await invoke<null>('rename', { 
+          old: file,
+          new: newPath
+        });
+        
+        // 由于rename命令成功时返回null，错误时会抛出异常
+        // 更新文件列表中的路径
+        atomStore.set(filesAtom as FilesAtomTauri, (prevFiles) => 
+          prevFiles.map((f) => f === file ? newPath : f)
+        );
+        
+        // 更新选中文件列表
+        atomStore.set(selectedFilesAtom, (prevSelected) => 
+          prevSelected.map((f) => f === file ? newPath : f)
+        );
+        
+        toast.success(`"${file}" 重命名为 "${manualName}" 成功`);
+        setIsPendingRename(false);
+        setHasChanges(false);
+        // 通知父组件状态变化
+        onPendingStateChange?.();
+        return true;
+      } else {
+        // Web环境实现重命名
+        // 由于Web环境限制，无法直接重命名文件，这里仅作示例
+        console.log('Web环境重命名:', file, manualName);
+        toast.info('Web环境不支持文件重命名');
+        return false;
+      }
+    } catch (error) {
+      console.error('重命名文件失败:', error);
+      toast.error(`重命名失败: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }, [file, manualName, fileItemInfo, isPendingRename, onPendingStateChange]);
+  
+  // 将重命名方法通过ref暴露给父组件
+  useImperativeHandle(ref, () => ({
+    executeRename: async () => {
+      if (isPendingRename) {
+        return await handleConfirmEdit();
+      }
+      return false;
+    },
+    hasPendingRename: () => isPendingRename
+  }), [isPendingRename, handleConfirmEdit]);
+
+  // 当fileItemInfo更新时，初始化手动修改值为预览值或原文件名
+  useEffect(() => {
+    if (fileItemInfo) {
+      setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+    }
+  }, [fileItemInfo]);
+
+  // 手动修改输入框变化处理
+  const handleManualChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setManualName(e.target.value);
+    // 检查是否与预览不同
+    if (fileItemInfo) {
+      setHasChanges(e.target.value !== (fileItemInfo.preview || fileItemInfo.fileInfo.fullName));
+    }
+  }, [fileItemInfo]);
+
+  // 锁定修改（不执行重命名）
+  const handleLockEdit = useCallback(() => {
+    if (!manualName.trim() || !fileItemInfo) {
+      setIsEditing(false);
+      return;
+    }
+    
+    // 标记为已锁定修改（待执行）
+    if (hasChanges) {
+      setIsPendingRename(true);
+      toast.info('已锁定修改，点击"执行"按钮应用更改');
+      // 通知父组件状态变化
+      onPendingStateChange?.();
+    }
+    
+    setIsEditing(false);
+  }, [manualName, fileItemInfo, hasChanges, onPendingStateChange]);
+
+  // 取消修改
+  const handleCancelEdit = useCallback(() => {
+    if (fileItemInfo) {
+      setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+    }
+    setIsEditing(false);
+    setHasChanges(false);
+    if (isPendingRename) {
+      setIsPendingRename(false);
+      // 通知父组件状态变化
+      onPendingStateChange?.();
+    }
+  }, [fileItemInfo, isPendingRename, onPendingStateChange]);
+
+  // 开始编辑
+  const handleStartEdit = useCallback(() => {
+    setIsEditing(true);
+  }, []);
+
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
-    const { checkbox, index, filename, time, thumbnail, preview } = columnWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
+    const { checkbox, index, filename, time, thumbnail, preview, manual } = columnWidths;
+    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr ${manual}%`;
   }, [columnWidths]);
 
   // 获取图片缩略图URL
@@ -279,6 +414,52 @@ export const FileItem: FC<FileItemProps> = ({ file, profileId, index, sortConfig
       <span className="flex size-full items-center px-2 py-1 font-bold">
         {fileItemInfo.preview}
       </span>
+      <span className="flex size-full items-center px-2 py-1 relative">
+        {isEditing ? (
+          <div className="flex w-full items-center gap-x-1">
+            <Input 
+              className={`h-6 text-sm ${hasChanges ? 'border-blue-300 bg-blue-50' : ''}`}
+              value={manualName}
+              onChange={handleManualChange}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleLockEdit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  handleCancelEdit();
+                }
+              }}
+            />
+            <div className="flex shrink-0 items-center">
+              <button 
+                className="p-1 rounded hover:bg-green-100"
+                onClick={handleLockEdit}
+                title="锁定修改 (Enter)"
+              >
+                <Lock className="h-4 w-4 text-green-500" />
+              </button>
+              <button 
+                className="p-1 rounded hover:bg-red-100"
+                onClick={handleCancelEdit}
+                title="取消修改 (Esc)"
+              >
+                <X className="h-4 w-4 text-red-500" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div 
+            className={`w-full cursor-pointer px-1 py-0.5 rounded ${isPendingRename ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
+            onClick={handleStartEdit}
+            title="点击编辑"
+          >
+            {manualName || (fileItemInfo.preview || fileItemInfo.fileInfo.fullName)}
+            {isPendingRename && <span className="ml-1 text-xs text-blue-500">(待执行)</span>}
+          </div>
+        )}
+      </span>
     </div>
   );
-};
+});
