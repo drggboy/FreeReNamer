@@ -54,7 +54,7 @@ function Component() {
         const fileItemRefs = window.__FILE_ITEM_REFS__;
         if (fileItemRefs) {
           // 执行所有待处理的手动修改
-          const promises = Array.from(fileItemRefs.entries()).map(async ([file, ref]) => {
+          const promises = Array.from(fileItemRefs.entries()).map(async ([_, ref]) => {
             if (ref.current?.hasPendingRename && ref.current.hasPendingRename()) {
               const success = await ref.current.executeRename();
               if (success) {
@@ -127,6 +127,77 @@ function Component() {
       },
     });
   }
+
+  // 以下函数未使用，可以注释或删除
+  /*
+  async function executeAllRenames() {
+    try {
+      setPendingOperation(true);
+      setRenameStats({
+        total: 0,
+        success: 0,
+        failed: 0,
+        messages: []
+      });
+
+      const fileItemRefs = window.__FILE_ITEM_REFS__;
+      if (!fileItemRefs) {
+        console.error('无法获取文件引用');
+        return;
+      }
+
+      // 筛选出所有待重命名的文件及其引用
+      const pendingRenames = Array.from(fileItemRefs.entries())
+        .filter(([_, ref]) => ref.current?.hasPendingRename())
+        .map(([_, ref]) => ref);
+
+      if (pendingRenames.length === 0) {
+        toast.info('没有待执行的重命名操作');
+        return;
+      }
+
+      let stats = {
+        total: pendingRenames.length,
+        success: 0,
+        failed: 0,
+        messages: [] as string[]
+      };
+
+      // 执行所有重命名操作
+      const promises = Array.from(fileItemRefs.entries())
+        .filter(([_, ref]) => ref.current?.hasPendingRename())
+        .map(async ([_, ref]) => {
+          try {
+            const success = await ref.current?.executeRename();
+            if (success) {
+              stats.success++;
+            } else {
+              stats.failed++;
+              stats.messages.push('重命名操作失败');
+            }
+          } catch (error) {
+            stats.failed++;
+            stats.messages.push(`错误: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        });
+
+      await Promise.all(promises);
+      setRenameStats(stats);
+
+      // 显示统计结果
+      if (stats.failed === 0) {
+        toast.success(`所有 ${stats.total} 个文件重命名成功！`);
+      } else {
+        toast.error(`已完成 ${stats.total} 个重命名操作，成功: ${stats.success}，失败: ${stats.failed}`);
+      }
+    } catch (error) {
+      console.error('执行所有重命名操作失败:', error);
+      toast.error(`执行重命名操作失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setPendingOperation(false);
+    }
+  }
+  */
 
   return (
     <div className="flex size-full bg-white">

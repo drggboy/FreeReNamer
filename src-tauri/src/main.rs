@@ -5,6 +5,8 @@ use std::{ffi::OsStr, fs};
 use walkdir::WalkDir;
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::process::Command;
+use serde_json;
+use chrono;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -139,11 +141,90 @@ fn open_with_custom_app(app_path: &str, file_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+// 获取文件信息
+#[tauri::command]
+fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
+    let path_obj = std::path::Path::new(path);
+    
+    if !path_obj.exists() {
+        return Err(format!("文件不存在: {}", path));
+    }
+    
+    // 获取文件名（带扩展名）
+    let full_name = path_obj.file_name()
+        .unwrap_or(OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+    
+    // 获取文件扩展名
+    let ext = path_obj.extension()
+        .unwrap_or(OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+    
+    // 如果有扩展名，带上前缀点号
+    let ext_with_dot = if !ext.is_empty() {
+        format!(".{}", ext)
+    } else {
+        ext
+    };
+    
+    // 获取文件名（不带扩展名）
+    let name = path_obj.file_stem()
+        .unwrap_or(OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+    
+    // 获取时间戳
+    let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+    let mut timestamp = None;
+    let mut time_string = None;
+    
+    // 尝试获取修改时间
+    if let Ok(time) = metadata.modified() {
+        if let Ok(duration) = time.duration_since(UNIX_EPOCH) {
+            timestamp = Some(duration.as_millis() as i64);
+            
+            // 格式化时间字符串 (简单实现，可根据需要修改)
+            let secs = duration.as_secs();
+            let dt = chrono::DateTime::from_timestamp(secs as i64, 0)
+                .unwrap_or(chrono::DateTime::from_timestamp(0, 0).unwrap());
+            time_string = Some(dt.format("%Y-%m-%d %H:%M:%S").to_string());
+        }
+    }
+    
+    // 判断是否为图片文件
+    let image_extensions = [
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", 
+        ".webp", ".tiff", ".tif", ".svg", ".avif"
+    ];
+    let is_image = !ext_with_dot.is_empty() && image_extensions.contains(&ext_with_dot.to_lowercase().as_str());
+    
+    // 构建返回数据
+    let mut result = serde_json::json!({
+        "name": name,
+        "ext": ext_with_dot, 
+        "fullName": full_name,
+        "isImage": is_image
+    });
+    
+    // 添加可选字段
+    if let Some(ts) = timestamp {
+        result["timestamp"] = serde_json::json!(ts);
+    }
+    
+    if let Some(ts_str) = time_string {
+        result["timeString"] = serde_json::json!(ts_str);
+    }
+    
+    Ok(result)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             rename, exists, is_file, read_dir, basename, get_file_time,
-            open_with_default_app, open_with_custom_app
+            open_with_default_app, open_with_custom_app, get_file_info
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .run(tauri::generate_context!())

@@ -1,9 +1,16 @@
 import { queryOptions } from '@tanstack/react-query';
 import { QueryType } from '../query';
-import { getFileInfo } from '../file';
 import { getProfile } from '../profile';
 import { execRules } from '../rule';
 import { type FileSortConfig } from '../atoms';
+import { isPlatformTauri, isFileSystemFileHandle, getWebFileInfo } from '../file';
+import type { FileInfo } from '../file/type';
+
+// 扩展的文件信息接口
+interface FileInfoExtended extends FileInfo {}
+
+// Tauri环境下的文件信息接口
+interface FileInfoTauri extends FileInfo {}
 
 export const fileItemInfoQueryOptions = (
   profileId: string,
@@ -88,3 +95,21 @@ export const getSortedFileIndices = async (
     return Array.from({ length: files.length }, (_, i) => i);
   }
 };
+
+/**
+ * 获取文件信息
+ */
+export async function getFileInfo(file: string | FileSystemFileHandle): Promise<FileInfoExtended> {
+  // 检查是否在Tauri环境
+  if (isPlatformTauri() && typeof file === 'string') {
+    // Tauri环境下获取文件信息
+    const { invoke } = await import('@tauri-apps/api');
+    return invoke<FileInfoTauri>('get_file_info', { path: file });
+  } else if (isFileSystemFileHandle(file)) {
+    // Web环境下获取文件信息
+    const fileInfo = await getWebFileInfo(file);
+    return fileInfo;
+  } else {
+    throw new Error("不支持的文件类型");
+  }
+}

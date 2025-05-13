@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, type FC, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
+import { useMemo, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
 import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
@@ -7,8 +7,6 @@ import { useAtomValue } from 'jotai';
 import { Image, ExternalLink, Lock, X } from 'lucide-react';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
-import path from 'path-browserify';
-import { cn } from '@/lib/utils';
 
 export interface FileItemProps {
   file: string;
@@ -73,7 +71,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         const newPath = await join(dirPath, manualName);
         
         // 调用Tauri后端进行重命名
-        const result = await invoke<null>('rename', { 
+        await invoke<null>('rename', { 
           old: file,
           new: newPath
         });

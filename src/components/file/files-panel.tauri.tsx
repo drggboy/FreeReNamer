@@ -8,7 +8,6 @@ import {
   imageViewerAppAtom,
   type FilesAtomTauri,
   type FileSortType,
-  type FileSortOrder,
   type ColumnWidths,
 } from '@/lib/atoms';
 import { listen } from '@tauri-apps/api/event';
@@ -23,7 +22,6 @@ import { Checkbox } from '../ui/checkbox';
 import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
-import { toast } from 'sonner';
 
 export interface FilesPanelProps {
   profileId: string;
@@ -74,8 +72,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 使用ref存储所有文件项的引用
   const fileItemRefs = useRef<Map<string | FileSystemFileHandle, React.RefObject<FileItemHandle>>>(new Map());
-  // 记录当前有多少个待重命名的文件
-  const [pendingRenameCount, setPendingRenameCount] = useState(0);
   
   // 同步全局状态和本地状态
   useEffect(() => {
@@ -220,17 +216,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     return sortedIndices.map(index => files[index]);
   }, [files, sortedIndices]);
 
-  // 更新待重命名文件计数
-  const updatePendingRenameCount = useCallback(() => {
-    let count = 0;
-    fileItemRefs.current.forEach((ref) => {
-      if (ref.current?.hasPendingRename()) {
-        count++;
-      }
-    });
-    setPendingRenameCount(count);
-  }, []);
-  
   // 将fileItemRefs设置为全局变量，以便route.tsx可以访问
   useEffect(() => {
     window.__FILE_ITEM_REFS__ = fileItemRefs.current;
@@ -250,10 +235,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     files.forEach((file) => {
       fileItemRefs.current.set(file, createRef<FileItemHandle>());
     });
-    
-    // 更新待重命名计数
-    updatePendingRenameCount();
-  }, [files, updatePendingRenameCount]);
+  }, [files]);
 
   // 在useEffect中设置全局文件列表
   useEffect(() => {
@@ -543,25 +525,17 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
-          {sortedFiles.map((file, i) => {
-            // 找到原始索引
-            const originalIndex = files.indexOf(file);
-            // 获取或创建ref
-            const ref = fileItemRefs.current.get(file) || createRef<FileItemHandle>();
-            if (!fileItemRefs.current.has(file)) {
-              fileItemRefs.current.set(file, ref);
-            }
-            
+          {sortedFiles.map((file) => {
+            fileItemRefs.current.set(file, createRef<FileItemHandle>());
             return (
               <FileItem
                 key={file}
-                ref={ref}
                 file={file}
                 profileId={profileId}
-                index={originalIndex}
+                index={files.indexOf(file)}
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
-                onPendingStateChange={updatePendingRenameCount}
+                ref={fileItemRefs.current.get(file)}
               />
             );
           })}

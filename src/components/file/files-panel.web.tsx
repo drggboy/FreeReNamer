@@ -7,12 +7,11 @@ import {
   DEFAULT_COLUMN_WIDTHS,
   type FilesAtomWeb,
   type FileSortType,
-  type FileSortOrder,
   type ColumnWidths,
 } from '@/lib/atoms';
 import { useAtom, useAtomValue } from 'jotai';
-import { useMemo, type FC, useState, useEffect, useRef, useCallback } from 'react';
-import { FileItem } from './file-item';
+import { useMemo, type FC, useState, useEffect, useRef, useCallback, createRef } from 'react';
+import { FileItem, type FileItemHandle } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
@@ -317,6 +316,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     } catch (err) {}
   }
 
+  const fileItemRefs = useRef<Map<FileSystemFileHandle, React.RefObject<FileItemHandle>>>(new Map());
+
   return (
     <div
       className="size-full"
@@ -440,17 +441,17 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
-          {sortedFiles.map((file, i) => {
-            // 找到原始索引
-            const originalIndex = files.indexOf(file);
+          {sortedFiles.map((file) => {
+            fileItemRefs.current.set(file, createRef<FileItemHandle>());
             return (
               <FileItem
-                key={file.name}
+                key={String(file.name)}
                 file={file.name}
                 profileId={profileId}
-                index={originalIndex}
+                index={files.indexOf(file)}
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
+                ref={fileItemRefs.current.get(file)}
               />
             );
           })}
