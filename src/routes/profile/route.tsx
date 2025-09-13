@@ -7,9 +7,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom, selectedFilesAtom } from '@/lib/atoms';
+import { atomStore, filesAtom, selectedFilesAtom, fileSortConfigAtom } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
+import { getSortedFileIndices } from '@/lib/queries/file';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { showConfirm } from '@/lib/ui';
 import { toast } from 'sonner';
@@ -77,8 +78,15 @@ function Component() {
       // 然后执行规则重命名
       const updatedFiles = [...files];
       const filePathMap = new Map<string, string>(); // 记录旧路径到新路径的映射
-      for (let i = 0, len = files.length; i < len; i++) {
-        const file = files[i];
+      
+      // 获取当前的排序配置和排序后的索引
+      const sortConfig = atomStore.get(fileSortConfigAtom);
+      const sortedIndices = await getSortedFileIndices(files, sortConfig);
+      
+      // 按照排序后的顺序处理文件
+      for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
+        const originalIndex = sortedIndices[displayIndex];
+        const file = files[originalIndex];
         const fileInfo = await getFileInfo(
           typeof file === 'string' ? file : file.name,
         );
@@ -87,7 +95,7 @@ function Component() {
           profile?.rules?.filter((rule) => rule.enabled) ?? [],
           {
             fileInfo,
-            index: i,
+            index: displayIndex, // 使用显示顺序中的索引
           },
         );
 
@@ -111,7 +119,7 @@ function Component() {
           });
           
           // 更新文件列表中的路径
-          updatedFiles[i] = outputFile;
+          updatedFiles[originalIndex] = outputFile;
           // 记录路径映射，用于更新选中文件列表
           filePathMap.set(file as string, outputFile);
         }
@@ -124,7 +132,7 @@ function Component() {
 
       // 刷新文件列表而不是清空
       if (__PLATFORM__ === __PLATFORM_TAURI__) {
-        atomStore.set(filesAtom, updatedFiles);
+        atomStore.set(filesAtom as any, updatedFiles);
         
         // 同时更新选中文件列表中的路径
         atomStore.set(selectedFilesAtom, (prevSelected) => 
