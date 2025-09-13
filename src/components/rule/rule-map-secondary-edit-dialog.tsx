@@ -19,6 +19,7 @@ export interface RuleMapSecondaryEditDialogProps {
   onOpenChange: (open: boolean) => void;
   rule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo>;
   onOverwriteRule: (updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo>) => void;
+  onSaveInstanceOnly?: (updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo>) => void;
 }
 
 /**
@@ -29,7 +30,8 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   open,
   onOpenChange,
   rule,
-  onOverwriteRule
+  onOverwriteRule,
+  onSaveInstanceOnly
 }) => {
   // 编辑状态
   const [includeExt, setIncludeExt] = useState(false);
@@ -112,7 +114,57 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
 
 
   /**
-   * 保存&覆盖模板
+   * 保存规则实例
+   * 只更新当前规则实例，不影响全局模板
+   */
+  const handleSaveInstance = async () => {
+    try {
+      // 深度克隆规则实例的lists，确保与全局模板完全隔离
+      const clonedRuleLists = rule.info.lists.map(list => ({
+        name: list.name,
+        targetNames: [...list.targetNames]  // 深度克隆targetNames数组
+      }));
+      
+      // 只修改当前活动列表的内容
+      clonedRuleLists[rule.info.activeListIndex] = {
+        ...activeList,
+        targetNames: [...previewItems]  // 使用新的数组，不共享引用
+      };
+      
+      const updatedRuleInfo: RuleMapInfo = {
+        lists: clonedRuleLists,
+        activeListIndex: rule.info.activeListIndex,
+        includeExt
+      };
+      
+      const updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
+        ...rule,
+        info: updatedRuleInfo
+      };
+
+      console.log('保存规则实例:', {
+        originalRule: rule,
+        updatedRule,
+        activeListName: activeList.name,
+        newTargetNames: previewItems,
+        clonedLists: clonedRuleLists
+      });
+
+      // 使用专门的回调，不经过updateRule的全局保存逻辑
+      if (onSaveInstanceOnly) {
+        onSaveInstanceOnly(updatedRule);
+      } else {
+        // 如果没有提供专门的回调，则提示用户
+        console.warn('onSaveInstanceOnly 回调未提供，无法保存规则实例');
+      }
+      onOpenChange(false);
+    } catch (error) {
+      console.error('保存规则实例失败:', error);
+    }
+  };
+
+  /**
+   * 覆盖模板
    * 更新当前规则实例并在全局列表映射规则下覆盖所使用的列表模板
    */
   const handleOverwrite = async () => {
@@ -123,7 +175,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         info: updatedRuleInfo
       };
 
-      console.log('保存&覆盖模板:', {
+      console.log('覆盖模板:', {
         originalRule: rule,
         updatedRule,
         activeListName: activeList.name,
@@ -160,7 +212,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       onOverwriteRule(updatedRule);
       onOpenChange(false);
     } catch (error) {
-      console.error('保存&覆盖模板失败:', error);
+      console.error('覆盖模板失败:', error);
     }
   };
 
@@ -173,7 +225,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   };
 
   /**
-   * 保存&新建模板
+   * 新建模板
    * 保存更新规则实例并且在全局列表映射规则下以此新建列表模板
    */
   const handleConfirmSaveAsNewTemplate = async () => {
@@ -211,7 +263,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         info: updatedRuleInfo
       };
 
-      console.log('保存&新建模板:', {
+      console.log('新建模板:', {
         originalRule: rule,
         updatedRule,
         newTemplateConfig,
@@ -247,7 +299,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       setNewTemplateName('');
       onOpenChange(false);
     } catch (error) {
-      console.error('保存&新建模板失败:', error);
+      console.error('新建模板失败:', error);
     }
   };
 
@@ -428,7 +480,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         {!isRenamingForTemplate && (
           <div className="flex justify-between items-center pt-4 border-t">
             <div className="text-sm text-muted-foreground">
-              编辑完成后可以保存并覆盖现有模板，或保存并新建模板
+              编辑完成后可以保存规则实例、覆盖现有模板或新建模板
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleCancel}>
@@ -436,11 +488,14 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                 取消
               </Button>
               <Button variant="outline" onClick={handleOverwrite}>
-                保存&覆盖模板
+                覆盖模板
               </Button>
               <Button onClick={handleStartSaveAsNewTemplate}>
                 <IconPlus className="h-4 w-4 mr-2" />
-                保存&新建模板
+                新建模板
+              </Button>
+              <Button variant="outline" onClick={handleSaveInstance}>
+                保存规则实例
               </Button>
             </div>
           </div>

@@ -241,6 +241,40 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
     updateRule(updatedRule);
   }
 
+  /**
+   * 保存规则实例（不影响全局模板）
+   */
+  function handleSaveInstanceOnly(updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo>) {
+    // 直接更新profile，绕过updateRule的全局保存逻辑
+    if (!profile) return;
+    
+    const updatedProfile = {
+      ...profile,
+      rules: profile.rules.map((r) => {
+        if (updatedRule.id === r.id) {
+          return {
+            ...r,
+            ...updatedRule,
+          };
+        }
+        return r;
+      }),
+    };
+    
+    // 直接调用updateProfile，不经过updateRule mutation
+    updateProfile(profileId, updatedProfile).then(() => {
+      // 手动触发查询刷新
+      queryClient.invalidateQueries({
+        queryKey: [QueryType.Profile, { id: profileId }],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryType.FileItemInfo, { profileId }],
+      });
+    }).catch((error) => {
+      console.error('保存规则实例失败:', error);
+    });
+  }
+
   function onRuleNameConfirm(name: string) {
     if (pendingRule) {
       addRule({ ...pendingRule, name });
@@ -341,6 +375,7 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
           onOpenChange={onCloseSecondaryEditDialog}
           rule={secondaryEditRule}
           onOverwriteRule={handleOverwriteRule}
+          onSaveInstanceOnly={handleSaveInstanceOnly}
         />
       )}
     </>
