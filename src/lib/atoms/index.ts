@@ -83,3 +83,15 @@ export const currentFolderAtom = atom<string | FileSystemDirectoryHandle | null>
 
 // 自定义图片查看器应用路径
 export const imageViewerAppAtom = atom<string | null>(null);
+
+// 撤销历史记录
+export interface UndoOperation {
+  id: string;
+  timestamp: number;
+  operations: Array<{
+    oldPath: string;
+    newPath: string;
+  }>;
+}
+
+export const undoHistoryAtom = atom<UndoOperation[]>([]);

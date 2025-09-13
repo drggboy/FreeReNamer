@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom, selectedFilesAtom, fileSortConfigAtom } from '@/lib/atoms';
+import { atomStore, filesAtom, selectedFilesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, type UndoOperation } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { getSortedFileIndices } from '@/lib/queries/file';
@@ -75,59 +75,196 @@ function Component() {
         console.error('执行手动修改失败:', error);
       }
       
-      // 然后执行规则重命名
+      // 然后执行规则重命名（使用两阶段重命名避免文件名交换冲突）
       const updatedFiles = [...files];
       const filePathMap = new Map<string, string>(); // 记录旧路径到新路径的映射
+      let successCount = 0;
+      let failedCount = 0;
+      const failedFiles: string[] = [];
       
       // 获取当前的排序配置和排序后的索引
       const sortConfig = atomStore.get(fileSortConfigAtom);
       const sortedIndices = await getSortedFileIndices(files, sortConfig);
       
-      // 按照排序后的顺序处理文件
-      for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
-        const originalIndex = sortedIndices[displayIndex];
-        const file = files[originalIndex];
-        const fileInfo = await getFileInfo(
-          typeof file === 'string' ? file : file.name,
-        );
-
-        const output = await execRules(
-          profile?.rules?.filter((rule) => rule.enabled) ?? [],
-          {
-            fileInfo,
-            index: displayIndex, // 使用显示顺序中的索引
-          },
-        );
-
-        if (!output) {
-          continue;
-        }
-
-        if (output === fileInfo.fullName) {
-          continue;
-        }
-
-        if (__PLATFORM__ === __PLATFORM_TAURI__) {
-          const { dirname, join } = await import('@tauri-apps/api/path');
-          const { invoke } = await import('@tauri-apps/api');
-          const dir = await dirname(file as string);
-          const outputFile = await join(dir, output);
-
-          await invoke('rename', {
-            old: file,
-            new: outputFile,
-          });
+      if (__PLATFORM__ === __PLATFORM_TAURI__) {
+        // Tauri平台：使用两阶段重命名
+        const { dirname, join } = await import('@tauri-apps/api/path');
+        const { invoke } = await import('@tauri-apps/api');
+        
+        // 收集所有需要重命名的文件信息
+        const renameOperations: Array<{
+          originalIndex: number;
+          file: string;
+          targetName: string;
+          tempName?: string;
+          tempPath?: string;
+          finalPath?: string;
+        }> = [];
+        
+        // 为撤销操作准备记录
+        const undoOperations: Array<{
+          oldPath: string;
+          newPath: string;
+        }> = [];
+        
+        // 第一步：收集所有重命名操作
+        for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
+          const originalIndex = sortedIndices[displayIndex];
+          const file = files[originalIndex] as string;
           
-          // 更新文件列表中的路径
-          updatedFiles[originalIndex] = outputFile;
-          // 记录路径映射，用于更新选中文件列表
-          filePathMap.set(file as string, outputFile);
-        }
+          try {
+            const fileInfo = await getFileInfo(file);
+            const output = await execRules(
+              profile?.rules?.filter((rule) => rule.enabled) ?? [],
+              {
+                fileInfo,
+                index: displayIndex,
+              },
+            );
 
-        if (__PLATFORM__ === __PLATFORM_WEB__) {
-          await (file as FileSystemFileHandle).move(output);
-          // Web平台的FileSystemFileHandle会自动更新，不需要手动更新路径
+            if (!output || output === fileInfo.fullName) {
+              continue;
+            }
+
+            renameOperations.push({
+              originalIndex,
+              file,
+              targetName: output,
+            });
+          } catch (error) {
+            console.error(`准备重命名操作失败: ${file}`, error);
+            failedCount++;
+            failedFiles.push(file);
+          }
         }
+        
+        // 第二步：为所有需要重命名的文件生成临时名称（第一阶段）
+        for (const operation of renameOperations) {
+          try {
+            const dir = await dirname(operation.file);
+            const tempName = await invoke<string>('generate_temp_filename', {
+              dir: dir,
+              originalName: operation.targetName
+            });
+            const tempPath = await join(dir, tempName);
+            const finalPath = await join(dir, operation.targetName);
+            
+            operation.tempName = tempName;
+            operation.tempPath = tempPath;
+            operation.finalPath = finalPath;
+            
+            // 第一阶段：重命名为临时名称
+            await invoke('rename', {
+              old: operation.file,
+              new: tempPath,
+            });
+            
+            console.log(`第一阶段：${operation.file} -> ${tempName}`);
+          } catch (error) {
+            console.error(`第一阶段重命名失败: ${operation.file}`, error);
+            failedCount++;
+            failedFiles.push(operation.file);
+            // 标记为失败，不参与第二阶段
+            operation.tempPath = undefined;
+          }
+        }
+        
+        // 第三步：将临时文件重命名为最终名称（第二阶段）
+        for (const operation of renameOperations) {
+          if (!operation.tempPath || !operation.finalPath) {
+            continue; // 跳过第一阶段失败的操作
+          }
+          
+          try {
+            // 第二阶段：临时名称 -> 最终名称
+            await invoke('rename', {
+              old: operation.tempPath,
+              new: operation.finalPath,
+            });
+            
+            // 更新文件列表中的路径
+            updatedFiles[operation.originalIndex] = operation.finalPath;
+            // 记录路径映射，用于更新选中文件列表
+            filePathMap.set(operation.file, operation.finalPath);
+            // 记录撤销操作
+            undoOperations.push({
+              oldPath: operation.file,
+              newPath: operation.finalPath,
+            });
+            successCount++;
+            
+            console.log(`第二阶段：${operation.tempName} -> ${operation.targetName}`);
+          } catch (error) {
+            console.error(`第二阶段重命名失败: ${operation.tempPath}`, error);
+            failedCount++;
+            failedFiles.push(operation.file);
+            
+            // 尝试回滚：将临时文件重命名回原名
+            try {
+              await invoke('rename', {
+                old: operation.tempPath,
+                new: operation.file,
+              });
+              console.log(`已回滚: ${operation.tempName} -> 原文件名`);
+            } catch (rollbackError) {
+              console.error(`回滚失败: ${operation.tempPath}`, rollbackError);
+            }
+          }
+        }
+        
+        // 如果有成功的操作，保存撤销历史
+        if (undoOperations.length > 0) {
+          const undoOperation: UndoOperation = {
+            id: Date.now().toString(),
+            timestamp: Date.now(),
+            operations: undoOperations,
+          };
+          
+          atomStore.set(undoHistoryAtom, (prevHistory) => {
+            // 只保留最近10次操作
+            const newHistory = [undoOperation, ...prevHistory].slice(0, 10);
+            return newHistory;
+          });
+        }
+      }
+
+      if (__PLATFORM__ === __PLATFORM_WEB__) {
+        // Web平台：保持原有逻辑（Web API可能不支持两阶段重命名）
+        for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
+          const originalIndex = sortedIndices[displayIndex];
+          const file = files[originalIndex];
+          
+          try {
+            const fileInfo = await getFileInfo(
+              typeof file === 'string' ? file : file.name,
+            );
+            const output = await execRules(
+              profile?.rules?.filter((rule) => rule.enabled) ?? [],
+              {
+                fileInfo,
+                index: displayIndex,
+              },
+            );
+
+            if (!output || output === fileInfo.fullName) {
+              continue;
+            }
+
+            await (file as FileSystemFileHandle).move(output);
+            successCount++;
+          } catch (error) {
+            console.error(`重命名文件失败: ${file}`, error);
+            failedCount++;
+            failedFiles.push((file as FileSystemFileHandle).name);
+          }
+        }
+      }
+      
+      // 显示执行结果统计
+      if (failedCount === 0) {
+        toast.success(`所有 ${successCount} 个文件重命名成功！`);
+      } else {
+        toast.error(`重命名完成：成功 ${successCount} 个，失败 ${failedCount} 个。失败的文件：${failedFiles.slice(0, 3).join(', ')}${failedFiles.length > 3 ? '...' : ''}`);
       }
 
       // 刷新文件列表而不是清空
@@ -143,12 +280,75 @@ function Component() {
     },
   });
 
+  const { mutate: execUndo } = useMutation({
+    mutationFn: async (undoOperation: UndoOperation) => {
+      if (__PLATFORM__ === __PLATFORM_TAURI__) {
+        const { invoke } = await import('@tauri-apps/api');
+        let successCount = 0;
+        let failedCount = 0;
+        
+        // 反向执行撤销操作（新路径 -> 旧路径）
+        for (const op of undoOperation.operations) {
+          try {
+            await invoke('rename', {
+              old: op.newPath,
+              new: op.oldPath,
+            });
+            successCount++;
+          } catch (error) {
+            console.error(`撤销失败: ${op.newPath} -> ${op.oldPath}`, error);
+            failedCount++;
+          }
+        }
+        
+        if (failedCount === 0) {
+          toast.success(`成功撤销 ${successCount} 个文件的重命名操作`);
+          
+          // 重新读取文件列表
+          const currentFolder = atomStore.get(currentFolderAtom);
+          if (currentFolder && typeof currentFolder === 'string') {
+            const files = await invoke<string[]>('read_dir', { path: currentFolder });
+            atomStore.set(filesAtom, files);
+          }
+          
+          // 从历史记录中移除已撤销的操作
+          atomStore.set(undoHistoryAtom, (prevHistory) => 
+            prevHistory.filter(h => h.id !== undoOperation.id)
+          );
+        } else {
+          toast.error(`撤销操作完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
+        }
+      } else {
+        toast.info('Web环境暂不支持撤销功能');
+      }
+    },
+  });
+
   function handleExecClick() {
     showConfirm({
       title: '确定执行？',
-      description: '执行后原文件名无法恢复',
+      description: '执行后可以通过撤销按钮恢复',
       onOk: () => {
         params.profileId && execProfile(params.profileId);
+      },
+    });
+  }
+
+  function handleUndoClick() {
+    const undoHistory = atomStore.get(undoHistoryAtom);
+    if (undoHistory.length === 0) {
+      toast.info('没有可撤销的操作');
+      return;
+    }
+    
+    const lastOperation = undoHistory[0];
+    const operationTime = new Date(lastOperation.timestamp).toLocaleString();
+    
+    showConfirm({
+      title: '确定撤销？',
+      description: `将撤销 ${operationTime} 的重命名操作（${lastOperation.operations.length} 个文件）`,
+      onOk: () => {
+        execUndo(lastOperation);
       },
     });
   }
@@ -263,9 +463,14 @@ function Component() {
               <IconLayoutSidebarLeftCollapse />
             </animated.button>
           </Button>
-          <Button size="sm" onClick={handleExecClick}>
-            执行
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleUndoClick} variant="outline">
+              撤销
+            </Button>
+            <Button size="sm" onClick={handleExecClick}>
+              执行
+            </Button>
+          </div>
         </div>
         <div className="h-[calc(100%-3rem)] w-full">
           <Outlet />

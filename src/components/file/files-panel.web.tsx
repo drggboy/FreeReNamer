@@ -425,12 +425,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           />
         </div>
         
-        <span className="flex size-full items-center justify-center px-2 cursor-pointer relative"
-          onClick={() => changeSortType('index')}
-        >
+        <span className="flex size-full items-center justify-center px-2 relative">
           <span className="flex items-center gap-1">
             序号
-            {renderSortIcon('index')}
           </span>
           <ResizableDivider 
             className="absolute right-0 h-full"

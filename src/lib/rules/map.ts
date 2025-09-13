@@ -63,28 +63,12 @@ export const RULE_MAP_DEFINE: RuleDefine<
     }
     
     try {
-      // 分离字符串和文件句柄数组，以匹配getSortedFileIndices的参数类型
-      // 由于文件可能是混合类型，我们需要根据平台选择合适的处理方式
-      let files: string[] | FileSystemFileHandle[];
+      // 在route.tsx中传递的index已经是displayIndex（显示顺序中的索引）
+      // 直接使用这个索引来映射目标名称
+      const displayIndex = index;
       
-      if (__PLATFORM__ === __PLATFORM_TAURI__) {
-        // Tauri平台上，文件是字符串路径
-        files = allFiles.filter((f): f is string => typeof f === 'string');
-      } else {
-        // Web平台上，文件是FileSystemFileHandle
-        files = allFiles.filter((f): f is FileSystemFileHandle => 
-          typeof f !== 'string' && 'kind' in f);
-      }
-      
-      // 获取排序后的索引映射
-      const sortedIndices = await getSortedFileIndices(files, sortConfig);
-      
-      // 找到当前文件在排序后列表中的位置
-      const originalIndex = index;
-      const displayIndex = sortedIndices.indexOf(originalIndex);
-      
-      // 如果找不到显示索引或超出了目标名称列表范围，则保持原名不变
-      if (displayIndex === -1 || displayIndex >= activeList.targetNames.length) {
+      // 如果显示索引超出了目标名称列表范围，则保持原名不变
+      if (displayIndex < 0 || displayIndex >= activeList.targetNames.length) {
         return includeExt ? fileInfo.fullName : fileInfo.name;
       }
       

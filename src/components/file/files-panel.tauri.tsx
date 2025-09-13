@@ -493,12 +493,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           />
         </div>
         
-        <span className="flex size-full items-center justify-center px-2 cursor-pointer relative"
-          onClick={() => changeSortType('index')}
-        >
+        <span className="flex size-full items-center justify-center px-2 relative">
           <span className="flex items-center gap-1">
             序号
-            {renderSortIcon('index')}
           </span>
           <ResizableDivider 
             className="absolute right-0 h-full"
@@ -576,14 +573,14 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
-          {sortedFiles.map((file) => {
+          {sortedFiles.map((file, displayIndex) => {
             fileItemRefs.current.set(file, createRef<FileItemHandle>());
             return (
               <FileItem
                 key={file}
                 file={file}
                 profileId={profileId}
-                index={files.indexOf(file)}
+                index={displayIndex}  // 使用显示索引，让列表映射按显示顺序工作
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
                 ref={fileItemRefs.current.get(file)}
