@@ -1,6 +1,6 @@
 import type { RuleCommonInfo, RuleDefine } from './base';
-import { atomStore, fileSortConfigAtom } from '../atoms';
-import { getSortedFileIndices } from '../queries/file';
+// import { atomStore, fileSortConfigAtom } from '../atoms';
+// import { getSortedFileIndices } from '../queries/file';
 import { store } from '../store';
 
 // 定义全局变量类型
@@ -91,7 +91,7 @@ export const RULE_MAP_DEFINE: RuleDefine<
     // 获取所有文件和当前的排序配置
     // 注意: 这里是异步获取全局状态，在实际执行时需要注意处理并发情况
     const allFiles = window.__ALL_FILES__ || [];
-    const sortConfig = atomStore.get(fileSortConfigAtom);
+    // const sortConfig = atomStore.get(fileSortConfigAtom);
     
     // 如果没有文件或列表为空，则保持原文件名不变
     if (allFiles.length === 0 || activeList.targetNames.length === 0) {

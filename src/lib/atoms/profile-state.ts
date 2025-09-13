@@ -33,7 +33,7 @@ export const defaultProfileState: ProfileState = {
  * 基于 profileId 的状态原子族
  * 每个配置都有自己独立的状态
  */
-export const profileStateAtomFamily = atomFamily((profileId: string) =>
+export const profileStateAtomFamily = atomFamily((_profileId: string) =>
   atom<ProfileState>(defaultProfileState)
 );
 

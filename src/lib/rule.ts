@@ -25,7 +25,7 @@ export async function getRuleTypeDefaultInfo<
   I extends RuleCommonInfo = RuleCommonInfo,
 >(type: string): Promise<I> {
   const result = getRuleDefine(type).getDefaultInfo();
-  return result instanceof Promise ? await result : result as I;
+  return (result instanceof Promise ? await result : result) as I;
 }
 
 export async function getRuleTypeDefaultValue<
