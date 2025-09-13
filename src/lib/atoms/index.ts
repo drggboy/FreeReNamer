@@ -98,3 +98,6 @@ export const undoHistoryAtom = atom<UndoOperation[]>([]);
 
 // 当前选中的缩略图（用于高亮显示）
 export const selectedThumbnailAtom = atom<string | null>(null);
+
+// 导出基于配置的状态管理
+export * from './profile-state';

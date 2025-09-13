@@ -1,5 +1,5 @@
 import { ProfileNavList } from '@/components/profile/profile-nav-list';
-import { createFileRoute, Outlet, useParams } from '@tanstack/react-router';
+import { createFileRoute, Outlet, useParams, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useSpring, animated } from '@react-spring/web';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,9 @@ import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { showConfirm } from '@/lib/ui';
+import { showConfirm, showRenameDialog } from '@/lib/ui';
 import { toast } from 'sonner';
+import { updateProfile } from '@/lib/profile';
 
 export const Route = createFileRoute('/profile')({
   component: Component,
@@ -22,6 +23,7 @@ export const Route = createFileRoute('/profile')({
 function Component() {
   const queryClient = useQueryClient();
   const params = useParams({ from: '/profile/$profileId' });
+  const navigate = useNavigate();
   const [sidePanelOpened, setSidePanelOpened] = useState(false);
 
   const navStyle = useSpring({
@@ -37,8 +39,36 @@ function Component() {
     mutationFn: async (info: Omit<Profile, 'id'>) => {
       return addProfile(info);
     },
-    onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: [QueryType.ProfileIds] });
+    onSuccess: async (newProfileId: string) => {
+      // 清除所有相关的查询缓存，确保数据是最新的
+      await queryClient.invalidateQueries({ queryKey: [QueryType.ProfileIds] });
+      await queryClient.invalidateQueries({ queryKey: [QueryType.Profile] });
+      await queryClient.invalidateQueries({ queryKey: [QueryType.FileItemInfo] });
+      
+      // 注意：由于现在每个配置都有独立的状态，不需要手动重置状态
+      
+      // 自动跳转到新创建的配置页面
+      navigate({
+        to: '/profile/$profileId',
+        params: {
+          profileId: newProfileId,
+        },
+      });
+      
+      // 延迟一小段时间后自动弹出重命名对话框
+      setTimeout(() => {
+        showRenameDialog((newName) => {
+          // 执行配置重命名
+          updateProfile(newProfileId, { name: newName }).then(() => {
+            // 刷新配置数据
+            queryClient.invalidateQueries({ queryKey: [QueryType.Profile, { id: newProfileId }] });
+            toast.success(`配置已重命名为"${newName}"`);
+          }).catch((error) => {
+            console.error('重命名配置失败:', error);
+            toast.error('重命名失败，请重试');
+          });
+        });
+      }, 100); // 短暂延迟确保页面跳转完成
     },
   });
 
@@ -443,7 +473,7 @@ function Component() {
             onClick={() => {
               execAddProfile({
                 name: '新配置',
-                rules: [],
+                rules: [], // 确保新配置是空白的，不继承任何默认规则
               });
             }}
           >

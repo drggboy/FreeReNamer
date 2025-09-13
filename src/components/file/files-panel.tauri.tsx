@@ -1,14 +1,13 @@
 import {
   atomStore,
-  filesAtom,
-  selectedFilesAtom,
-  fileSortConfigAtom,
   columnWidthsAtom,
   DEFAULT_COLUMN_WIDTHS,
   imageViewerAppAtom,
-  currentFolderAtom,
-  selectedThumbnailAtom,
-  type FilesAtomTauri,
+  getProfileFilesAtom,
+  getProfileSelectedFilesAtom,
+  getProfileCurrentFolderAtom,
+  getProfileSelectedThumbnailAtom,
+  getProfileFileSortConfigAtom,
   type FileSortType,
   type ColumnWidths,
 } from '@/lib/atoms';
@@ -57,12 +56,13 @@ function clearThumbnailCache() {
 const PX_TO_REM = 16; // 假设1rem = 16px
 
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
-  const files = useAtomValue(filesAtom as FilesAtomTauri);
-  const selectedFiles = useAtomValue(selectedFilesAtom);
-  const sortConfig = useAtomValue(fileSortConfigAtom);
+  // 使用基于配置的状态管理
+  const files = useAtomValue(getProfileFilesAtom(profileId));
+  const selectedFiles = useAtomValue(getProfileSelectedFilesAtom(profileId));
+  const sortConfig = useAtomValue(getProfileFileSortConfigAtom(profileId));
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
   const [imageViewerApp, setImageViewerApp] = useAtom(imageViewerAppAtom);
-  const [currentFolder, setCurrentFolder] = useAtom(currentFolderAtom);
+  const [currentFolder, setCurrentFolder] = useAtom(getProfileCurrentFolderAtom(profileId));
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
@@ -266,13 +266,13 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     const files = await invoke<string[]>('read_dir', { path: openDir });
 
     // 替换文件列表（而不是添加到现有列表）
-    atomStore.set(filesAtom as FilesAtomTauri, files);
+    atomStore.set(getProfileFilesAtom(profileId), files);
     
     // 清空选中状态
-    atomStore.set(selectedFilesAtom, []);
+    atomStore.set(getProfileSelectedFilesAtom(profileId), []);
     
     // 清空缩略图选中状态
-    atomStore.set(selectedThumbnailAtom, null);
+    atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
   }
 
   async function onRefreshFiles() {
@@ -286,13 +286,13 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       const files = await invoke<string[]>('read_dir', { path: currentFolder });
       
       // 更新文件列表
-      atomStore.set(filesAtom as FilesAtomTauri, files);
+      atomStore.set(getProfileFilesAtom(profileId), files);
       
       // 清空选中状态
-      atomStore.set(selectedFilesAtom, []);
+      atomStore.set(getProfileSelectedFilesAtom(profileId), []);
       
       // 清空缩略图选中状态
-      atomStore.set(selectedThumbnailAtom, null);
+      atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
       
       console.log(`已刷新 ${files.length} 个文件`);
     } catch (error) {
@@ -314,9 +314,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   }
 
   function onCheckedChange(checked: boolean) {
-    atomStore.set(selectedFilesAtom as FilesAtomTauri, () => {
+    atomStore.set(getProfileSelectedFilesAtom(profileId), (_prevFiles) => {
       if (checked) {
-        return files.slice();
+        return files.slice() as string[];
       }
 
       return [];
@@ -324,10 +324,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   }
 
   function onRemove() {
-    atomStore.set(filesAtom as FilesAtomTauri, (prevFiles) =>
-      prevFiles.filter((file) => !selectedFiles.includes(file)),
+    atomStore.set(getProfileFilesAtom(profileId), (prevFiles: string[] | FileSystemFileHandle[]) =>
+      prevFiles.filter((file: string | FileSystemFileHandle) => !selectedFiles.includes(file as string)) as string[] | FileSystemFileHandle[],
     );
-    atomStore.set(selectedFilesAtom, []);
+    atomStore.set(getProfileSelectedFilesAtom(profileId), []);
     
     // 如果删除后文件列表为空，清理缩略图缓存
     if (selectedFiles.length === files.length) {
@@ -340,7 +340,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     // 如果正在调整列宽，不改变排序
     if (isResizing) return;
     
-    atomStore.set(fileSortConfigAtom, (prev) => {
+    atomStore.set(getProfileFileSortConfigAtom(profileId), (prev: any) => {
       // 如果点击当前排序列，切换排序顺序
       if (prev.type === type) {
         return {
@@ -388,8 +388,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         dropFiles.push(...files);
       }
 
-      atomStore.set(filesAtom as FilesAtomTauri, (prevFiles) => [
-        ...new Set([...prevFiles, ...dropFiles]),
+      atomStore.set(getProfileFilesAtom(profileId), (prevFiles: string[] | FileSystemFileHandle[]) => [
+        ...new Set([...prevFiles as string[], ...dropFiles]),
       ]);
     }).then((unlistenFn) => {
       unlisten = unlistenFn;
@@ -582,10 +582,11 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         <div className="flex w-full flex-col divide-y">
           {sortedFiles.map((file, displayIndex) => {
             fileItemRefs.current.set(file, createRef<FileItemHandle>());
+            const fileKey = typeof file === 'string' ? file : file.name;
             return (
               <FileItem
-                key={file}
-                file={file}
+                key={fileKey}
+                file={typeof file === 'string' ? file : file.name}
                 profileId={profileId}
                 index={displayIndex}  // 使用显示索引，让列表映射按显示顺序工作
                 sortConfig={sortConfig}
