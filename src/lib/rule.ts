@@ -21,20 +21,21 @@ export function getRuleDefine<
   return ruleDefineDict[type] as RuleDefine<T, I>;
 }
 
-export function getRuleTypeDefaultInfo<
+export async function getRuleTypeDefaultInfo<
   I extends RuleCommonInfo = RuleCommonInfo,
->(type: string): I {
-  return getRuleDefine(type).getDefaultInfo() as I;
+>(type: string): Promise<I> {
+  const result = getRuleDefine(type).getDefaultInfo();
+  return result instanceof Promise ? await result : result as I;
 }
 
-export function getRuleTypeDefaultValue<
+export async function getRuleTypeDefaultValue<
   T extends string = string,
   I extends RuleCommonInfo = RuleCommonInfo,
->(ruleType: T): Rule<T, I> {
+>(ruleType: T): Promise<Rule<T, I>> {
   return {
     id: nanoid(),
     type: ruleType,
-    info: getRuleTypeDefaultInfo(ruleType),
+    info: await getRuleTypeDefaultInfo(ruleType),
     name: '',
     enabled: true,
   } as Rule<T, I>;

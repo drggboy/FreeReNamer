@@ -36,7 +36,7 @@ export interface RuleDefine<
 > {
   type: T;
   label: string;
-  getDefaultInfo(): I;
+  getDefaultInfo(): I | Promise<I>;
   getDescription(ruleInfo: I): string;
   exec(ruleInfo: I, args: ExecRuleArgs): Promise<string>;
 }

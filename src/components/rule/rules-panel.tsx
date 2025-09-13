@@ -144,7 +144,13 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   });
 
   const form = useForm<Rule>({
-    defaultValues: getRuleTypeDefaultValue(RULE_REPLACE_TYPE),
+    defaultValues: {
+      id: '',
+      type: RULE_REPLACE_TYPE,
+      info: { includeExt: false },
+      name: '',
+      enabled: true,
+    } as Rule,
   });
 
   function handleAddRule() {
@@ -183,7 +189,9 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
 
   useEffect(() => {
     if (!addRuleDialogOpened) {
-      form.reset(getRuleTypeDefaultValue(RULE_REPLACE_TYPE));
+      getRuleTypeDefaultValue(RULE_REPLACE_TYPE).then(defaultValue => {
+        form.reset(defaultValue);
+      });
     }
   }, [addRuleDialogOpened, form.reset]);
 

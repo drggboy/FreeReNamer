@@ -33,9 +33,11 @@ export const RuleEditPanel: FC<RuleEditPanelProps> = ({
             {ruleDefines.map((ruleDefine) => (
               <div
                 key={ruleDefine.type}
-                onClick={() =>
-                  form.reset(getRuleTypeDefaultValue(ruleDefine.type))
-                }
+                onClick={() => {
+                  getRuleTypeDefaultValue(ruleDefine.type).then(defaultValue => {
+                    form.reset(defaultValue);
+                  });
+                }}
                 data-active={typeValue === ruleDefine.type || null}
                 className="flex h-8 w-full cursor-default items-center justify-center rounded text-sm transition-colors data-[active]:bg-primary hover:bg-accent data-[active]:text-primary-foreground hover:text-accent-foreground"
               >

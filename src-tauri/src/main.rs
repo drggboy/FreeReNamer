@@ -11,9 +11,79 @@ use chrono;
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn rename(old: &str, new: &str) -> Result<(), String> {
+    // 检查目标文件是否已存在
+    if std::path::Path::new(new).exists() {
+        return Err(format!("目标文件已存在: {}", new));
+    }
+    
     fs::rename(old, new).map_err(|err| err.to_string())?;
 
     Ok(())
+}
+
+/// 生成不冲突的文件名，如果目标文件名已存在，则自动添加序号
+#[tauri::command]
+fn get_safe_filename(dir: &str, desired_name: &str) -> Result<String, String> {
+    let desired_path = std::path::Path::new(dir).join(desired_name);
+    
+    // 如果目标文件不存在，直接返回原名
+    if !desired_path.exists() {
+        return Ok(desired_name.to_string());
+    }
+    
+    // 解析文件名和扩展名
+    let path_obj = std::path::Path::new(desired_name);
+    let file_stem = path_obj.file_stem()
+        .unwrap_or(std::ffi::OsStr::new(""))
+        .to_string_lossy();
+    let extension = path_obj.extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    
+    // 尝试添加序号直到找到不冲突的文件名
+    for i in 1..=9999 {
+        let new_name = format!("{}({}){}", file_stem, i, extension);
+        let new_path = std::path::Path::new(dir).join(&new_name);
+        
+        if !new_path.exists() {
+            return Ok(new_name);
+        }
+    }
+    
+    Err("无法生成不冲突的文件名".to_string())
+}
+
+/// 生成临时文件名，用于两阶段重命名
+#[tauri::command]
+fn generate_temp_filename(dir: &str, original_name: &str) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    // 解析原始文件名和扩展名
+    let path_obj = std::path::Path::new(original_name);
+    let file_stem = path_obj.file_stem()
+        .unwrap_or(std::ffi::OsStr::new(""))
+        .to_string_lossy();
+    let extension = path_obj.extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    
+    // 使用时间戳生成临时文件名
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    
+    // 尝试不同的临时名称直到找到不冲突的
+    for i in 0..1000 {
+        let temp_name = format!("~temp_{}_{}{}{}", file_stem, timestamp, i, extension);
+        let temp_path = std::path::Path::new(dir).join(&temp_name);
+        
+        if !temp_path.exists() {
+            return Ok(temp_name);
+        }
+    }
+    
+    Err("无法生成临时文件名".to_string())
 }
 
 #[tauri::command]
@@ -141,6 +211,46 @@ fn open_with_custom_app(app_path: &str, file_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 使用系统文件浏览器打开文件夹
+#[tauri::command]
+fn open_folder_in_explorer(folder_path: &str) -> Result<(), String> {
+    let path_obj = std::path::Path::new(folder_path);
+    
+    if !path_obj.exists() {
+        return Err(format!("文件夹不存在: {}", folder_path));
+    }
+    
+    if !path_obj.is_dir() {
+        return Err(format!("路径不是文件夹: {}", folder_path));
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(folder_path)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(folder_path)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(folder_path)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+    
+    Ok(())
+}
+
 // 获取文件信息
 #[tauri::command]
 fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
@@ -224,7 +334,8 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             rename, exists, is_file, read_dir, basename, get_file_time,
-            open_with_default_app, open_with_custom_app, get_file_info
+            open_with_default_app, open_with_custom_app, get_file_info,
+            open_folder_in_explorer, get_safe_filename, generate_temp_filename
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .run(tauri::generate_context!())

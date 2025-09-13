@@ -15,9 +15,10 @@ import {
   type Rule,
   type RuleMapInfo,
   type ListConfig,
+  saveGlobalMapLists,
 } from '@/lib/rules';
 import type { FC } from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { 
   IconTrash, 
@@ -48,6 +49,24 @@ export const RuleMapForm: FC = () => {
   
   // 获取当前活动的列表
   const activeList = lists[activeListIndex] || { name: '', targetNames: [] };
+  
+  /**
+   * 保存列表配置到全局存储
+   */
+  const saveListsToGlobal = async (updatedLists: ListConfig[]) => {
+    try {
+      await saveGlobalMapLists(updatedLists);
+    } catch (error) {
+      console.error('保存全局列表配置失败:', error);
+    }
+  };
+  
+  // 监听列表变化并保存到全局配置
+  useEffect(() => {
+    if (lists.length > 0) {
+      saveListsToGlobal(lists);
+    }
+  }, [lists]);
   
   // 切换活动列表
   const handleSwitchList = (index: number) => {
