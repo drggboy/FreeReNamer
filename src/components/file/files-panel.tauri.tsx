@@ -7,6 +7,7 @@ import {
   DEFAULT_COLUMN_WIDTHS,
   imageViewerAppAtom,
   currentFolderAtom,
+  selectedThumbnailAtom,
   type FilesAtomTauri,
   type FileSortType,
   type ColumnWidths,
@@ -269,6 +270,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     
     // 清空选中状态
     atomStore.set(selectedFilesAtom, []);
+    
+    // 清空缩略图选中状态
+    atomStore.set(selectedThumbnailAtom, null);
   }
 
   async function onRefreshFiles() {
@@ -286,6 +290,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       // 清空选中状态
       atomStore.set(selectedFilesAtom, []);
+      
+      // 清空缩略图选中状态
+      atomStore.set(selectedThumbnailAtom, null);
       
       console.log(`已刷新 ${files.length} 个文件`);
     } catch (error) {

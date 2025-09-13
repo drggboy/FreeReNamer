@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 import { Image, ExternalLink, Lock, X } from 'lucide-react';
@@ -40,9 +40,14 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const imageViewerApp = useAtomValue(imageViewerAppAtom);
+  const selectedThumbnail = useAtomValue(selectedThumbnailAtom);
   const selected = useMemo(
     () => selectedFiles.includes(file),
     [selectedFiles, file],
+  );
+  const isThumbnailSelected = useMemo(
+    () => selectedThumbnail === file,
+    [selectedThumbnail, file],
   );
 
   // 手动修改文件名相关状态
@@ -307,6 +312,9 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   // 处理图片点击事件，打开图片文件
   const handleImageClick = useCallback(async () => {
     if (fileItemInfo?.fileInfo.isImage) {
+      // 设置当前缩略图为选中状态
+      atomStore.set(selectedThumbnailAtom, file);
+      
       try {
         // 检查是否在Tauri环境
         // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
@@ -423,7 +431,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
             )}
             
             {!thumbnailLoading && !thumbnailError && thumbnailUrl && (
-              <div className="relative flex items-center justify-center group">
+              <div className={`relative flex items-center justify-center group p-1 rounded transition-all ${
+                isThumbnailSelected 
+                  ? 'border-2 border-blue-500 bg-blue-50' 
+                  : 'border-2 border-transparent'
+              }`}>
                 <img 
                   src={thumbnailUrl} 
                   alt={fileItemInfo.fileInfo.fullName} 
@@ -438,6 +450,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
                 <div className="absolute top-0 right-0 bg-white bg-opacity-70 p-0.5 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
                   <ExternalLink className="h-3 w-3 text-blue-500" />
                 </div>
+                {isThumbnailSelected && (
+                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-sm">
+                    <div className="w-full h-full bg-blue-500 rounded-full animate-pulse"></div>
+                  </div>
+                )}
               </div>
             )}
           </>

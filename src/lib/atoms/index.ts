@@ -95,3 +95,6 @@ export interface UndoOperation {
 }
 
 export const undoHistoryAtom = atom<UndoOperation[]>([]);
+
+// 当前选中的缩略图（用于高亮显示）
+export const selectedThumbnailAtom = atom<string | null>(null);
