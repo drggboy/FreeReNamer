@@ -27,7 +27,7 @@ export const fileItemInfoQueryOptions = (
         profile?.rules?.filter((rule) => rule.enabled) ?? [],
         { fileInfo, index },
       );
-      const preview = result === fileInfo.fullName ? null : result;
+      const preview = result;
       
       // 计算排序后的索引
       const sortedIndex = index; // 默认保持原序

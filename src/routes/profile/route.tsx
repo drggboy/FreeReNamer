@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom } from '@/lib/atoms';
+import { atomStore, filesAtom, selectedFilesAtom } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -75,6 +75,8 @@ function Component() {
       }
       
       // 然后执行规则重命名
+      const updatedFiles = [...files];
+      const filePathMap = new Map<string, string>(); // 记录旧路径到新路径的映射
       for (let i = 0, len = files.length; i < len; i++) {
         const file = files[i];
         const fileInfo = await getFileInfo(
@@ -107,14 +109,29 @@ function Component() {
             old: file,
             new: outputFile,
           });
+          
+          // 更新文件列表中的路径
+          updatedFiles[i] = outputFile;
+          // 记录路径映射，用于更新选中文件列表
+          filePathMap.set(file as string, outputFile);
         }
 
         if (__PLATFORM__ === __PLATFORM_WEB__) {
           await (file as FileSystemFileHandle).move(output);
+          // Web平台的FileSystemFileHandle会自动更新，不需要手动更新路径
         }
       }
 
-      atomStore.set(filesAtom, []);
+      // 刷新文件列表而不是清空
+      if (__PLATFORM__ === __PLATFORM_TAURI__) {
+        atomStore.set(filesAtom, updatedFiles);
+        
+        // 同时更新选中文件列表中的路径
+        atomStore.set(selectedFilesAtom, (prevSelected) => 
+          prevSelected.map(filePath => filePathMap.get(filePath) || filePath)
+        );
+      }
+      // Web平台不需要更新，因为FileSystemFileHandle已经自动更新了
     },
   });
 

@@ -19,7 +19,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
-import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, RefreshCw } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 
@@ -274,6 +274,52 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     ]);
   }
 
+  async function onRefreshFiles() {
+    try {
+      // 获取当前文件列表中所有不重复的目录路径
+      const currentFiles = atomStore.get(filesAtom as FilesAtomTauri);
+      const directoryPaths = new Set<string>();
+      
+      // 从文件路径中提取目录路径
+      for (const filePath of currentFiles) {
+        try {
+          // 使用Tauri API获取文件的目录路径
+          const { dirname } = await import('@tauri-apps/api/path');
+          const dirPath = await dirname(filePath);
+          directoryPaths.add(dirPath);
+        } catch (error) {
+          console.warn('无法获取文件的目录路径:', filePath, error);
+        }
+      }
+      
+      if (directoryPaths.size === 0) {
+        console.log('没有找到可刷新的目录');
+        return;
+      }
+      
+      // 重新扫描所有目录
+      const refreshedFiles: string[] = [];
+      for (const dirPath of directoryPaths) {
+        try {
+          const files = await invoke<string[]>('read_dir', { path: dirPath });
+          refreshedFiles.push(...files);
+        } catch (error) {
+          console.warn('刷新目录失败:', dirPath, error);
+        }
+      }
+      
+      // 更新文件列表，去重
+      atomStore.set(filesAtom as FilesAtomTauri, [...new Set(refreshedFiles)]);
+      
+      // 清空选中状态
+      atomStore.set(selectedFilesAtom, []);
+      
+      console.log(`已刷新 ${refreshedFiles.length} 个文件`);
+    } catch (error) {
+      console.error('刷新文件列表失败:', error);
+    }
+  }
+
   function onCheckedChange(checked: boolean) {
     atomStore.set(selectedFilesAtom as FilesAtomTauri, () => {
       if (checked) {
@@ -384,6 +430,16 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           </Button>
           <Button size="sm" onClick={onAddDir}>
             添加文件夹
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={onRefreshFiles}
+            title="刷新文件夹"
+            className="flex items-center gap-1"
+          >
+            <RefreshCw className="h-4 w-4" />
+            刷新
           </Button>
           <Button 
             size="sm" 
