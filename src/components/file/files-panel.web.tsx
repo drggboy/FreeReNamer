@@ -7,6 +7,7 @@ import {
   DEFAULT_COLUMN_WIDTHS,
   currentFolderAtom,
   selectedThumbnailAtom,
+  deleteModeAtom,
   type FilesAtomWeb,
   type FileSortType,
   type ColumnWidths,
@@ -18,7 +19,7 @@ import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
 import { uniqBy } from 'lodash-es';
-import { ChevronDown, ChevronUp, Settings, RefreshCw, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, RefreshCw, FolderOpen, Trash2 } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 import { calculateFilenameWidth, shouldAdjustFilenameWidth } from '@/lib/filename-width-calculator';
@@ -73,6 +74,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const sortConfig = useAtomValue(fileSortConfigAtom);
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
   const [currentFolder, setCurrentFolder] = useAtom(currentFolderAtom);
+  const [deleteMode, setDeleteMode] = useAtom(deleteModeAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
@@ -188,8 +190,13 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
     const { checkbox, index, filename, time, thumbnail, preview } = currentWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
-  }, [currentWidths]);
+    // 根据删除模式决定是否显示复选框列
+    if (deleteMode) {
+      return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
+    } else {
+      return `${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
+    }
+  }, [currentWidths, deleteMode]);
 
   // 调整列宽的处理函数
   const handleResizeColumn = useCallback((column: keyof ColumnWidths, delta: number) => {
@@ -255,6 +262,19 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     hasInitialAdjusted.current = false;
     console.log('重置列宽并触发自适应调整');
   }, [setColumnWidths]);
+
+  // 切换删除模式
+  const toggleDeleteMode = useCallback(() => {
+    setDeleteMode(prev => {
+      const newMode = !prev;
+      // 如果退出删除模式，清空选中的文件
+      if (!newMode) {
+        atomStore.set(selectedFilesAtom, []);
+      }
+      console.log('删除模式:', newMode ? '开启' : '关闭');
+      return newMode;
+    });
+  }, [setDeleteMode]);
   
   // 当文件列表或排序配置变化时，重新计算排序顺序
   useEffect(() => {
@@ -475,10 +495,26 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             图片查看器
           </Button>
         </div>
-        <div className="flex items-center">
-          {selectedFiles.length > 0 && (
-            <Button size="sm" onClick={onRemove}>
-              移除
+        <div className="flex items-center gap-x-2">
+          <Button 
+            size="sm" 
+            variant={deleteMode ? "default" : "outline"}
+            onClick={toggleDeleteMode}
+            className="flex items-center gap-1"
+          >
+            <Trash2 className="h-4 w-4" />
+{deleteMode ? '退出删除' : '删除文件'}
+          </Button>
+          {deleteMode && (
+            <Button 
+              size="sm" 
+              variant="destructive" 
+              onClick={onRemove}
+              disabled={selectedFiles.length === 0}
+              className="flex items-center gap-1"
+            >
+              <Trash2 className="h-4 w-4" />
+              移除选中文件 ({selectedFiles.length})
             </Button>
           )}
         </div>
@@ -489,15 +525,17 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         className="grid h-8 w-full divide-x divide-neutral-300 rounded-t border border-b-0 bg-neutral-200 text-sm"
         style={{ gridTemplateColumns }}
       >
-        <div className="flex size-full items-center justify-center relative">
-          <Checkbox checked={checked} onCheckedChange={onCheckedChange} />
-          <ResizableDivider 
-            className="absolute right-0 h-full"
-            onResizeStart={handleResizeStart}
-            onResize={(delta) => handleResizeColumn('checkbox', delta)}
-            onResizeEnd={handleResizeEnd}
-          />
-        </div>
+        {deleteMode && (
+          <div className="flex size-full items-center justify-center relative">
+            <Checkbox checked={checked} onCheckedChange={onCheckedChange} />
+            <ResizableDivider 
+              className="absolute right-0 h-full"
+              onResizeStart={handleResizeStart}
+              onResize={(delta) => handleResizeColumn('checkbox', delta)}
+              onResizeEnd={handleResizeEnd}
+            />
+          </div>
+        )}
         
         <span className="flex size-full items-center justify-center px-2 relative">
           <span className="flex items-center gap-1">
@@ -570,6 +608,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
                 index={files.indexOf(file)}
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
+                deleteMode={deleteMode}
                 ref={fileItemRefs.current.get(file)}
               />
             );

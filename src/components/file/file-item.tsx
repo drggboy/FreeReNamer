@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 import { Image, ExternalLink, Lock, X } from 'lucide-react';
@@ -14,6 +14,7 @@ export interface FileItemProps {
   index: number;
   sortConfig: FileSortConfig;
   columnWidths: ColumnWidths;
+  deleteMode?: boolean;
   onPendingStateChange?: () => void;
 }
 
@@ -31,14 +32,15 @@ if (typeof window !== 'undefined') {
 }
 
 // 使用memo包装组件，避免不必要的重新渲染
-export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, onPendingStateChange }, ref) => {
+export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, deleteMode = false, onPendingStateChange }, ref) => {
   const {
     data: fileItemInfo,
     error,
     isError,
   } = useQuery(fileItemInfoQueryOptions(profileId, file, index, sortConfig));
 
-  const selectedFiles = useAtomValue(selectedFilesAtom);
+  // 根据平台选择正确的selectedFiles atom
+  const selectedFiles = useAtomValue(__PLATFORM__ === __PLATFORM_TAURI__ ? getProfileSelectedFilesAtom(profileId) : selectedFilesAtom);
   const imageViewerApp = useAtomValue(imageViewerAppAtom);
   const selectedThumbnail = useAtomValue(selectedThumbnailAtom);
   const selected = useMemo(
@@ -179,8 +181,13 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   // 根据当前列宽生成grid-template-columns样式
   const gridTemplateColumns = useMemo(() => {
     const { checkbox, index, filename, time, thumbnail, preview, manual } = columnWidths;
-    return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr ${manual}%`;
-  }, [columnWidths]);
+    // 根据删除模式决定是否显示复选框列
+    if (deleteMode) {
+      return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr ${manual}%`;
+    } else {
+      return `${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr ${manual}%`;
+    }
+  }, [columnWidths, deleteMode]);
 
   // 获取图片缩略图URL
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
@@ -373,7 +380,10 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   }, [file, fileItemInfo?.fileInfo.isImage, imageViewerApp]);
 
   function onCheckedChange(checked: boolean) {
-    atomStore.set(selectedFilesAtom, (prev) => {
+    // 根据平台选择正确的selectedFiles atom
+    const targetAtom = __PLATFORM__ === __PLATFORM_TAURI__ ? getProfileSelectedFilesAtom(profileId) : selectedFilesAtom;
+    
+    atomStore.set(targetAtom, (prev) => {
       if (checked) {
         return [...prev, file];
       }
@@ -401,9 +411,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       className="grid min-h-8 w-full divide-x break-all text-sm hover:bg-neutral-100"
       style={{ gridTemplateColumns }}
     >
-      <div className="flex size-full items-center justify-center">
-        <Checkbox checked={selected} onCheckedChange={onCheckedChange} />
-      </div>
+      {deleteMode && (
+        <div className="flex size-full items-center justify-center">
+          <Checkbox checked={selected} onCheckedChange={onCheckedChange} />
+        </div>
+      )}
       <span className="flex size-full items-center justify-center px-2 py-1 text-neutral-700">
         {fileItemInfo.sortedIndex + 1}
       </span>
@@ -517,6 +529,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     prevProps.file === nextProps.file &&
     prevProps.profileId === nextProps.profileId &&
     prevProps.index === nextProps.index &&
+    prevProps.deleteMode === nextProps.deleteMode &&
     JSON.stringify(prevProps.sortConfig) === JSON.stringify(nextProps.sortConfig) &&
     JSON.stringify(prevProps.columnWidths) === JSON.stringify(nextProps.columnWidths)
   );
