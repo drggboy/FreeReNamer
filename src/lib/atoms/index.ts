@@ -78,5 +78,8 @@ export const globalAlertInfoAtom = atom<GlobalAlertInfo>({
 
 export const selectedFilesAtom = atom<string[]>([]);
 
+// 当前选中的文件夹路径 (Tauri: 字符串路径, Web: DirectoryHandle)
+export const currentFolderAtom = atom<string | FileSystemDirectoryHandle | null>(null);
+
 // 自定义图片查看器应用路径
 export const imageViewerAppAtom = atom<string | null>(null);

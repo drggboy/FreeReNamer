@@ -5,6 +5,7 @@ import {
   fileSortConfigAtom,
   columnWidthsAtom,
   DEFAULT_COLUMN_WIDTHS,
+  currentFolderAtom,
   type FilesAtomWeb,
   type FileSortType,
   type ColumnWidths,
@@ -16,7 +17,7 @@ import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
 import { uniqBy } from 'lodash-es';
-import { ChevronDown, ChevronUp, Settings, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, RefreshCw, FolderOpen } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 
@@ -69,6 +70,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const sortConfig = useAtomValue(fileSortConfigAtom);
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
+  const [currentFolder, setCurrentFolder] = useAtom(currentFolderAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
@@ -208,69 +210,52 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     return sortedIndices.map(index => files[index]);
   }, [files, sortedIndices]);
 
-  async function onAddFile() {
-    try {
-      const result = await window.showOpenFilePicker({ multiple: true });
 
-      atomStore.set(filesAtom as FilesAtomWeb, (prevFile) =>
-        uniqBy([...prevFile, ...result], 'name'),
-      );
-    } catch (err) {}
-  }
-
-  async function onAddDir() {
+  async function onSelectFolder() {
     try {
       const result = await window.showDirectoryPicker();
+      
+      // 设置当前文件夹
+      setCurrentFolder(result);
+      
+      // 获取文件夹中的所有文件
       const files = await getAllFiles(result);
 
-      atomStore.set(filesAtom as FilesAtomWeb, (prevFile) =>
-        uniqBy([...prevFile, ...files], 'name'),
-      );
+      // 替换文件列表（而不是添加到现有列表）
+      atomStore.set(filesAtom as FilesAtomWeb, files);
+      
+      // 清空选中状态
+      atomStore.set(selectedFilesAtom, []);
     } catch (err) {}
   }
 
   async function onRefreshFiles() {
     try {
-      // 获取当前文件列表中所有的目录句柄
-      const currentFiles = atomStore.get(filesAtom as FilesAtomWeb);
-      const directoryHandles = new Set<FileSystemDirectoryHandle>();
-      
-      // 从文件句柄中提取目录句柄
-      for (const file of currentFiles) {
-        try {
-          // 获取文件的父目录
-          const parent = await file.getParent();
-          if (parent) {
-            directoryHandles.add(parent);
-          }
-        } catch (error) {
-          // 如果无法获取父目录，跳过这个文件
-          console.warn('无法获取文件的父目录:', file.name, error);
-        }
-      }
-      
-      if (directoryHandles.size === 0) {
-        console.log('没有找到可刷新的目录');
+      if (!currentFolder || typeof currentFolder === 'string') {
+        console.log('没有选择文件夹，无法刷新');
         return;
       }
       
-      // 重新扫描所有目录
-      const refreshedFiles: FileSystemFileHandle[] = [];
-      for (const directoryHandle of directoryHandles) {
-        const files = await getAllFiles(directoryHandle);
-        refreshedFiles.push(...files);
-      }
+      // 重新扫描当前文件夹
+      const files = await getAllFiles(currentFolder);
       
       // 更新文件列表
-      atomStore.set(filesAtom as FilesAtomWeb, uniqBy(refreshedFiles, 'name'));
+      atomStore.set(filesAtom as FilesAtomWeb, files);
       
       // 清空选中状态
       atomStore.set(selectedFilesAtom, []);
       
-      console.log(`已刷新 ${refreshedFiles.length} 个文件`);
+      console.log(`已刷新 ${files.length} 个文件`);
     } catch (error) {
       console.error('刷新文件列表失败:', error);
     }
+  }
+
+  async function onOpenFolder() {
+    // 在Web环境中，无法直接打开系统文件浏览器到特定文件夹
+    // 这里只是显示一个提示信息
+    console.log('Web环境下无法直接打开系统文件浏览器');
+    alert('Web环境下无法直接打开系统文件浏览器，请手动在文件系统中访问所选文件夹');
   }
 
   function onCheckedChange(checked: boolean) {
@@ -372,11 +357,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     >
       <div className="flex w-full justify-between gap-x-2 pb-4">
         <div className="flex items-center gap-x-2">
-          <Button size="sm" onClick={onAddFile}>
-            添加文件
-          </Button>
-          <Button size="sm" onClick={onAddDir}>
-            添加文件夹
+          <Button size="sm" onClick={onSelectFolder}>
+            选择文件夹
           </Button>
           <Button 
             size="sm" 
@@ -384,9 +366,21 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             onClick={onRefreshFiles}
             title="刷新文件夹"
             className="flex items-center gap-1"
+            disabled={!currentFolder}
           >
             <RefreshCw className="h-4 w-4" />
             刷新
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={onOpenFolder}
+            title="在文件浏览器中打开文件夹（Web环境下不可用）"
+            className="flex items-center gap-1"
+            disabled={!currentFolder || typeof currentFolder === 'string'}
+          >
+            <FolderOpen className="h-4 w-4" />
+            打开文件夹
           </Button>
           <Button 
             size="sm" 
