@@ -45,23 +45,7 @@ export const RuleEditPanel: FC<RuleEditPanelProps> = ({
           </div>
         </ScrollArea>
       )}
-      <div className="grid h-full flex-1 grid-rows-[max-content_1fr] gap-y-4 overflow-hidden">
-        <fieldset className="size-full rounded border">
-          <legend className="ml-3 px-1 font-bold text-sm">规则名称</legend>
-          <div className="p-4 pt-2">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Input {...field} autoComplete="off" />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </div>
-        </fieldset>
+      <div className="size-full overflow-hidden">
         <fieldset
           className={cn(
             'size-full rounded border',

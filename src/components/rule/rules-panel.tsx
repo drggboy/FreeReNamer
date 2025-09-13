@@ -15,6 +15,7 @@ import { useForm } from 'react-hook-form';
 import { Form } from '../ui/form';
 import {
   getRuleTypeDefaultValue,
+  getRuleDefine,
   type Rule,
   RULE_REPLACE_TYPE,
 } from '@/lib/rule';
@@ -22,6 +23,7 @@ import { updateProfile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { ScrollArea } from '../ui/scroll-area';
 import { RuleEditDialog } from './rule-edit-dialog';
+import { RuleNameInputDialog } from './rule-name-input-dialog';
 
 export interface RulesPanelProps {
   profileId: string;
@@ -32,6 +34,8 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   const { data: profile } = useQuery(profileQueryOptions(profileId));
   const [addRuleDialogOpened, setAddRuleDialogOpened] = useState(false);
   const [targetEditRule, setTargetEditRule] = useState<Rule | undefined>();
+  const [nameInputDialogOpened, setNameInputDialogOpened] = useState(false);
+  const [pendingRule, setPendingRule] = useState<Rule | null>(null);
 
   const { mutate: addRule } = useMutation({
     mutationFn: async (rule: Rule) => {
@@ -148,9 +152,10 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   }
 
   function onSubmit(values: Rule) {
-    addRule(values);
-
+    // 设置待处理的规则并打开名称输入对话框
+    setPendingRule(values);
     setAddRuleDialogOpened(false);
+    setNameInputDialogOpened(true);
   }
 
   function onUpdateRule(values: Rule) {
@@ -161,6 +166,19 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
 
   function onCloseRuleEditDialog() {
     setTargetEditRule(undefined);
+  }
+
+  function onRuleNameConfirm(name: string) {
+    if (pendingRule) {
+      addRule({ ...pendingRule, name });
+      setPendingRule(null);
+    }
+    setNameInputDialogOpened(false);
+  }
+
+  function onRuleNameCancel() {
+    setPendingRule(null);
+    setNameInputDialogOpened(false);
   }
 
   useEffect(() => {
@@ -232,6 +250,12 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
         rule={targetEditRule}
         onSubmit={onUpdateRule}
         onOpenedChange={onCloseRuleEditDialog}
+      />
+      <RuleNameInputDialog
+        open={nameInputDialogOpened}
+        defaultName={pendingRule ? getRuleDefine(pendingRule.type).label : ''}
+        onConfirm={onRuleNameConfirm}
+        onCancel={onRuleNameCancel}
       />
     </>
   );
