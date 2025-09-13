@@ -1,9 +1,9 @@
-import { Suspense, lazy, type FC } from 'react';
+import type { FC } from 'react';
 import { RuleReplaceForm } from './rule-type-froms/rule-replace-form';
 import { RuleDeleteForm } from './rule-type-froms/rule-delete-form';
-import { IconLoader2 } from '@tabler/icons-react';
 import { RuleFormatForm } from './rule-type-froms/rule-format-form';
 import { RuleTemplateForm } from './rule-type-froms/rule-template-form';
+import { RuleScriptForm } from './rule-type-froms/rule-script-form';
 import {
   RULE_DELETE_TYPE,
   RULE_FORMAT_TYPE,
@@ -15,8 +15,6 @@ import {
 } from '@/lib/rules';
 import { RuleInsertForm } from './rule-type-froms/rule-insert-form';
 import { RuleMapForm } from './rule-type-froms/rule-map-form';
-
-const RuleScriptForm = lazy(() => import('./rule-type-froms/rule-script-form'));
 
 export interface RuleFormRenderProps {
   type: string;
@@ -34,18 +32,7 @@ export const RuleFormRender: FC<RuleFormRenderProps> = ({ type }) => {
       return <RuleFormatForm />;
 
     case RULE_SCRIPT_TYPE:
-      return (
-        <Suspense
-          fallback={
-            <div className="flex size-full items-center justify-center gap-x-2">
-              <IconLoader2 className="animate-spin" />
-              <span>正在加载...</span>
-            </div>
-          }
-        >
-          <RuleScriptForm />
-        </Suspense>
-      );
+      return <RuleScriptForm />;
 
     case RULE_TEMPLATE_TYPE:
       return <RuleTemplateForm />;
