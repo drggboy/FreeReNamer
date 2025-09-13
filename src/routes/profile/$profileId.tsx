@@ -12,13 +12,13 @@ function Component() {
 
   return (
     <div className="flex size-full flex-col gap-y-2 px-4 py-2">
-      <fieldset className="h-1/2 w-full rounded border p-4 pt-2">
+      <fieldset className="h-2/3 w-full rounded border p-4 pt-2">
         <legend className="font-bold text-sm">操作文件</legend>
         <Suspense fallback="...">
           <FilesPanel profileId={profileId} />
         </Suspense>
       </fieldset>
-      <fieldset className="h-1/2 w-full rounded border p-4 pt-2">
+      <fieldset className="h-1/3 w-full rounded border p-4 pt-2">
         <legend className="font-bold text-sm">处理规则</legend>
         <RulesPanel profileId={profileId} />
       </fieldset>

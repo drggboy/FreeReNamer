@@ -329,9 +329,9 @@ export const RuleMapForm: FC = () => {
         control={form.control}
         name="info.lists"
         render={() => (
-          <FormItem className="flex-1 mt-4">
-            <div className="h-full">
-              <ScrollArea className="h-[300px] w-full rounded border">
+          <FormItem className="flex-1 mt-4 min-h-0">
+            <div className="h-full min-h-0">
+              <ScrollArea className="h-full w-full rounded border">
                 <div className="p-2">
                   {!activeList || activeList.targetNames.length === 0 ? (
                     <div className="text-sm text-muted-foreground p-4 text-center">

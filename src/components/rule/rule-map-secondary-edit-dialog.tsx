@@ -490,11 +490,11 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
               <Button variant="outline" onClick={handleOverwrite}>
                 覆盖模板
               </Button>
-              <Button onClick={handleStartSaveAsNewTemplate}>
+              <Button variant="outline" onClick={handleStartSaveAsNewTemplate}>
                 <IconPlus className="h-4 w-4 mr-2" />
                 新建模板
               </Button>
-              <Button variant="outline" onClick={handleSaveInstance}>
+              <Button onClick={handleSaveInstance}>
                 保存规则实例
               </Button>
             </div>
