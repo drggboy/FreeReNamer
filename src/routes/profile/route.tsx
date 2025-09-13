@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom, selectedFilesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, type UndoOperation } from '@/lib/atoms';
+import { atomStore, filesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, getProfileFilesAtom, getProfileFileSortConfigAtom, getProfileSelectedFilesAtom, getProfileCurrentFolderAtom, type UndoOperation } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { getSortedFileIndices } from '@/lib/queries/file';
@@ -75,7 +75,10 @@ function Component() {
   const { mutate: execProfile } = useMutation({
     mutationFn: async (profileId: string) => {
       const profile = await getProfile(profileId);
-      const files = atomStore.get(filesAtom);
+      // 根据平台获取正确的文件列表
+      const files = __PLATFORM__ === __PLATFORM_TAURI__ 
+        ? atomStore.get(getProfileFilesAtom(profileId))
+        : atomStore.get(filesAtom);
       
       // 首先尝试执行所有待处理的手动修改
       let manualRenamedCount = 0;
@@ -113,7 +116,9 @@ function Component() {
       const failedFiles: string[] = [];
       
       // 获取当前的排序配置和排序后的索引
-      const sortConfig = atomStore.get(fileSortConfigAtom);
+      const sortConfig = __PLATFORM__ === __PLATFORM_TAURI__ 
+        ? atomStore.get(getProfileFileSortConfigAtom(profileId))
+        : atomStore.get(fileSortConfigAtom);
       const sortedIndices = await getSortedFileIndices(files, sortConfig);
       
       if (__PLATFORM__ === __PLATFORM_TAURI__) {
@@ -299,14 +304,30 @@ function Component() {
 
       // 刷新文件列表而不是清空
       if (__PLATFORM__ === __PLATFORM_TAURI__) {
-        atomStore.set(filesAtom as any, updatedFiles);
+        // 更新profile-based的文件列表
+        atomStore.set(getProfileFilesAtom(profileId), updatedFiles as string[]);
         
-        // 同时更新选中文件列表中的路径
-        atomStore.set(selectedFilesAtom, (prevSelected) => 
-          prevSelected.map(filePath => filePathMap.get(filePath) || filePath)
+        // 同时更新profile-based的选中文件列表中的路径
+        atomStore.set(getProfileSelectedFilesAtom(profileId), (prevSelected) => 
+          (prevSelected as string[]).map(filePath => filePathMap.get(filePath) || filePath)
         );
       }
       // Web平台不需要更新，因为FileSystemFileHandle已经自动更新了
+      
+      // 清理缩略图缓存，因为文件路径已经改变
+      if (successCount > 0) {
+        const cache = window.__THUMBNAIL_CACHE__;
+        if (cache) {
+          console.log('清理缩略图缓存，因为文件已重命名');
+          // 释放所有blob URL
+          for (const url of cache.values()) {
+            if (url && url.startsWith('blob:')) {
+              URL.revokeObjectURL(url);
+            }
+          }
+          cache.clear();
+        }
+      }
     },
   });
 
@@ -335,10 +356,17 @@ function Component() {
           toast.success(`成功撤销 ${successCount} 个文件的重命名操作`);
           
           // 重新读取文件列表
-          const currentFolder = atomStore.get(currentFolderAtom);
+          const currentFolder = __PLATFORM__ === __PLATFORM_TAURI__ 
+            ? atomStore.get(getProfileCurrentFolderAtom(params.profileId))
+            : atomStore.get(currentFolderAtom);
           if (currentFolder && typeof currentFolder === 'string') {
             const files = await invoke<string[]>('read_dir', { path: currentFolder });
-            atomStore.set(filesAtom, files);
+            // 更新正确的文件列表atom
+            if (__PLATFORM__ === __PLATFORM_TAURI__) {
+              atomStore.set(getProfileFilesAtom(params.profileId), files);
+            } else {
+              atomStore.set(filesAtom, files);
+            }
           }
           
           // 从历史记录中移除已撤销的操作

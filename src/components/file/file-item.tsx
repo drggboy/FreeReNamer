@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, getProfileFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 import { Image, ExternalLink, Lock, X } from 'lucide-react';
@@ -84,19 +84,44 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         });
         
         // 由于rename命令成功时返回null，错误时会抛出异常
-        // 更新文件列表中的路径
-        atomStore.set(filesAtom as FilesAtomTauri, (prevFiles) => 
-          prevFiles.map((f) => f === file ? newPath : f)
-        );
-        
-        // 更新选中文件列表
-        atomStore.set(selectedFilesAtom, (prevSelected) => 
-          prevSelected.map((f) => f === file ? newPath : f)
-        );
+        // 根据平台更新正确的文件列表
+        if (__PLATFORM__ === __PLATFORM_TAURI__) {
+          // Tauri环境：更新profile-based的文件列表
+          atomStore.set(getProfileFilesAtom(profileId), (prevFiles) => 
+            (prevFiles as string[]).map((f) => f === file ? newPath : f)
+          );
+          
+          // 更新profile-based的选中文件列表
+          atomStore.set(getProfileSelectedFilesAtom(profileId), (prevSelected) => 
+            (prevSelected as string[]).map((f) => f === file ? newPath : f)
+          );
+        } else {
+          // Web环境：更新全局文件列表
+          atomStore.set(filesAtom as FilesAtomTauri, (prevFiles) => 
+            prevFiles.map((f) => f === file ? newPath : f)
+          );
+          
+          // 更新全局选中文件列表
+          atomStore.set(selectedFilesAtom, (prevSelected) => 
+            prevSelected.map((f) => f === file ? newPath : f)
+          );
+        }
         
         toast.success(`"${file}" 重命名为 "${manualName}" 成功`);
         setIsPendingRename(false);
         setHasChanges(false);
+        
+        // 清理旧文件的缩略图缓存
+        const oldCacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
+        if (thumbnailCache.has(oldCacheKey)) {
+          const oldUrl = thumbnailCache.get(oldCacheKey);
+          if (oldUrl && oldUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(oldUrl);
+          }
+          thumbnailCache.delete(oldCacheKey);
+          console.log('清理了旧文件的缩略图缓存:', oldCacheKey);
+        }
+        
         // 通知父组件状态变化
         onPendingStateChange?.();
         return true;

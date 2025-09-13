@@ -698,7 +698,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             const fileKey = typeof file === 'string' ? file : file.name;
             return (
               <FileItem
-                key={fileKey}
+                key={`${fileKey}-${displayIndex}`}
                 file={typeof file === 'string' ? file : file.name}
                 profileId={profileId}
                 index={displayIndex}  // 使用显示索引，让列表映射按显示顺序工作

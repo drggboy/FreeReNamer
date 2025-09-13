@@ -598,14 +598,14 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
-          {sortedFiles.map((file) => {
+          {sortedFiles.map((file, displayIndex) => {
             fileItemRefs.current.set(file, createRef<FileItemHandle>());
             return (
               <FileItem
-                key={String(file.name)}
+                key={`${file.name}-${displayIndex}`}
                 file={file.name}
                 profileId={profileId}
-                index={files.indexOf(file)}
+                index={displayIndex}
                 sortConfig={sortConfig}
                 columnWidths={currentWidths}
                 deleteMode={deleteMode}
