@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   type RULE_MAP_TYPE,
   type Rule,
@@ -147,199 +148,209 @@ export const RuleMapForm: FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-y-4">
-      <FormField
-        control={form.control}
-        name="info.includeExt"
-        render={({ field }) => (
-          <FormItem className="flex items-center space-x-2 space-y-0">
-            <FormControl>
-              <Checkbox
-                checked={field.value}
-                onCheckedChange={field.onChange}
-              />
-            </FormControl>
-            <FormLabel>包含扩展名</FormLabel>
-          </FormItem>
-        )}
-      />
+    <div className="flex flex-col h-full">
+      {/* 固定配置区域 */}
+      <div className="flex-shrink-0 space-y-4 pb-4 border-b">
+        <FormField
+          control={form.control}
+          name="info.includeExt"
+          render={({ field }) => (
+            <FormItem className="flex items-center space-x-2 space-y-0">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <FormLabel>包含扩展名</FormLabel>
+            </FormItem>
+          )}
+        />
 
-      {/* 列表选择器 */}
-      <div className="rounded border p-2">
-        <div className="text-sm font-medium mb-2">列表配置</div>
-        
-        <div className="flex flex-wrap gap-2 mb-2">
-          {lists.map((list, index) => (
-            <Button
-              key={index}
-              type="button"
-              variant={index === activeListIndex ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleSwitchList(index)}
-              className="flex items-center"
-            >
-              <IconListDetails className="h-4 w-4 mr-1" />
-              {list.name}
-              {lists.length > 1 && (
-                <IconTrash
-                  className="h-4 w-4 ml-2 text-destructive hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteList(index);
+        {/* 列表选择器 */}
+        <div className="rounded border p-2">
+          <div className="text-sm font-medium mb-2">列表配置</div>
+          
+          <div className="flex flex-wrap gap-2 mb-2">
+            {lists.map((list, index) => (
+              <Button
+                key={index}
+                type="button"
+                variant={index === activeListIndex ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleSwitchList(index)}
+                className="flex items-center"
+              >
+                <IconListDetails className="h-4 w-4 mr-1" />
+                {list.name}
+                {lists.length > 1 && (
+                  <IconTrash
+                    className="h-4 w-4 ml-2 text-destructive hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteList(index);
+                    }}
+                  />
+                )}
+              </Button>
+            ))}
+            
+            {isAddingList ? (
+              <div className="flex items-center gap-x-1">
+                <Input
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  placeholder="列表名称"
+                  className="w-32 h-8 text-xs"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddList();
+                    } else if (e.key === 'Escape') {
+                      setIsAddingList(false);
+                      setNewListName('');
+                    }
                   }}
                 />
-              )}
-            </Button>
-          ))}
-          
-          {isAddingList ? (
-            <div className="flex items-center gap-x-1">
-              <Input
-                value={newListName}
-                onChange={(e) => setNewListName(e.target.value)}
-                placeholder="列表名称"
-                className="w-32 h-8 text-xs"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddList();
-                  } else if (e.key === 'Escape') {
-                    setIsAddingList(false);
-                    setNewListName('');
-                  }
-                }}
-              />
-              <Button 
-                type="button" 
-                variant="ghost" 
-                size="icon"
-                className="h-8 w-8"
-                onClick={handleAddList}
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleAddList}
+                >
+                  <IconCheck className="h-4 w-4" />
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsAddingList(false)}
+                >
+                  <IconX className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAddingList(true)}
+                className="flex items-center"
               >
-                <IconCheck className="h-4 w-4" />
+                <IconPlus className="h-4 w-4 mr-1" />
+                添加列表
               </Button>
+            )}
+          </div>
+        </div>
+
+        {/* 当前列表标题和操作按钮 */}
+        <div className="flex items-center justify-between">
+          <FormLabel className="flex items-center gap-x-2">
+            {isEditingListName ? (
+              <div className="flex items-center gap-x-1">
+                <Input
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  placeholder="列表名称"
+                  className="w-32 h-8 text-xs"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleRenameList();
+                    } else if (e.key === 'Escape') {
+                      setIsEditingListName(false);
+                      setNewListName('');
+                    }
+                  }}
+                />
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleRenameList}
+                >
+                  <IconCheck className="h-4 w-4" />
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsEditingListName(false)}
+                >
+                  <IconX className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                <span>{activeList.name || '默认列表'}</span>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleStartEditListName}
+                >
+                  <IconEdit className="h-3 w-3" />
+                </Button>
+              </>
+            )}
+          </FormLabel>
+          
+          {/* 编辑按钮 */}
+          {!isEditingListName && (
+            <div className="flex flex-wrap gap-2">
               <Button 
                 type="button" 
-                variant="ghost" 
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setIsAddingList(false)}
+                variant="outline" 
+                size="sm"
+                onClick={handleOpenListEditDialog}
               >
-                <IconX className="h-4 w-4" />
+                <IconEdit className="h-4 w-4 mr-1" />
+                编辑列表
               </Button>
             </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAddingList(true)}
-              className="flex items-center"
-            >
-              <IconPlus className="h-4 w-4 mr-1" />
-              添加列表
-            </Button>
           )}
         </div>
+        
+        <FormDescription>
+          按照显示顺序将原文件名映射为列表中的文件名
+        </FormDescription>
       </div>
 
+      {/* 可滚动的列表显示区域 */}
       <FormField
         control={form.control}
         name="info.lists"
         render={() => (
-          <FormItem>
-            <div className="flex items-center justify-between mb-2">
-              <FormLabel className="flex items-center gap-x-2">
-                {isEditingListName ? (
-                  <div className="flex items-center gap-x-1">
-                    <Input
-                      value={newListName}
-                      onChange={(e) => setNewListName(e.target.value)}
-                      placeholder="列表名称"
-                      className="w-32 h-8 text-xs"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleRenameList();
-                        } else if (e.key === 'Escape') {
-                          setIsEditingListName(false);
-                          setNewListName('');
-                        }
-                      }}
-                    />
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleRenameList}
-                    >
-                      <IconCheck className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setIsEditingListName(false)}
-                    >
-                      <IconX className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <span>{activeList.name || '默认列表'}</span>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={handleStartEditListName}
-                    >
-                      <IconEdit className="h-3 w-3" />
-                    </Button>
-                  </>
-                )}
-              </FormLabel>
-              
-              {/* 编辑按钮 */}
-              {!isEditingListName && (
-                <div className="flex flex-wrap gap-2">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleOpenListEditDialog}
-                  >
-                    <IconEdit className="h-4 w-4 mr-1" />
-                    编辑列表
-                  </Button>
-                </div>
-              )}
-            </div>
-            
-            <FormDescription>
-              按照显示顺序将原文件名映射为列表中的文件名
-            </FormDescription>
-            
-            {/* 显示当前列表 */}
-            <div className="flex flex-col gap-y-2 mb-2 max-h-[240px] overflow-y-auto border rounded p-2">
-              {!activeList || activeList.targetNames.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  暂无目标文件名，请点击"编辑列表"添加
-                </div>
-              ) : (
-                activeList.targetNames.map((name, index) => (
-                  <div key={index} className="flex items-center gap-x-2">
-                    <div className="w-8 h-8 flex items-center justify-center bg-muted rounded">
-                      {index + 1}
+          <FormItem className="flex-1 mt-4">
+            <div className="h-full">
+              <ScrollArea className="h-[300px] w-full rounded border">
+                <div className="p-2">
+                  {!activeList || activeList.targetNames.length === 0 ? (
+                    <div className="text-sm text-muted-foreground p-4 text-center">
+                      暂无目标文件名，请点击"编辑列表"添加
                     </div>
-                    <div className="flex-1 border rounded p-2 bg-card">{name}</div>
-                  </div>
-                ))
-              )}
+                  ) : (
+                    <div className="flex flex-col gap-y-2">
+                      {activeList.targetNames.map((name, index) => (
+                        <div key={index} className="flex items-center gap-x-2">
+                          <div className="w-8 h-8 flex items-center justify-center bg-muted rounded text-sm">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 border rounded p-2 bg-card text-sm">{name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
             </div>
             <FormMessage />
           </FormItem>

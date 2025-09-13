@@ -4,11 +4,10 @@ import {
   getRuleTypeDefaultValue,
   type Rule,
 } from '@/lib/rule';
+import { RULE_MAP_TYPE } from '@/lib/rules';
 import { useMemo, type FC } from 'react';
 import { RuleFormRender } from './rule-form-render';
 import { useFormContext } from 'react-hook-form';
-import { FormControl, FormField, FormItem } from '../ui/form';
-import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '@/lib/utils';
 
@@ -51,11 +50,11 @@ export const RuleEditPanel: FC<RuleEditPanelProps> = ({
         <fieldset
           className={cn(
             'size-full rounded border',
-            typeValue !== RULE_SCRIPT_TYPE && 'overflow-hidden',
+            (typeValue !== RULE_SCRIPT_TYPE && typeValue !== RULE_MAP_TYPE) && 'overflow-hidden',
           )}
         >
           <legend className="ml-3 px-1 font-bold text-sm">规则配置</legend>
-          {typeValue === RULE_SCRIPT_TYPE ? (
+          {(typeValue === RULE_SCRIPT_TYPE || typeValue === RULE_MAP_TYPE) ? (
             <div className="size-full p-4 pt-2">
               <RuleFormRender type={typeValue} />
             </div>
