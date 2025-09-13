@@ -12,7 +12,6 @@ import {
   IconPlus
 } from '@tabler/icons-react';
 import type { Rule, RuleMapInfo, ListConfig, RULE_MAP_TYPE } from '@/lib/rules';
-import { nanoid } from 'nanoid';
 import { saveGlobalMapLists } from '@/lib/rules';
 
 export interface RuleMapSecondaryEditDialogProps {
@@ -111,19 +110,10 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
     };
   };
 
-  /**
-   * 保存列表配置到全局存储
-   */
-  const saveListsToGlobal = async (updatedRuleInfo: RuleMapInfo) => {
-    try {
-      await saveGlobalMapLists(updatedRuleInfo.lists);
-    } catch (error) {
-      console.error('保存全局列表配置失败:', error);
-    }
-  };
 
   /**
-   * 覆盖现有规则
+   * 保存&覆盖模板
+   * 更新当前规则实例并在全局列表映射规则下覆盖所使用的列表模板
    */
   const handleOverwrite = async () => {
     try {
@@ -133,21 +123,44 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         info: updatedRuleInfo
       };
 
-      console.log('覆盖现有规则:', {
+      console.log('保存&覆盖模板:', {
         originalRule: rule,
         updatedRule,
-        updatedLists: updatedRuleInfo.lists
+        activeListName: activeList.name,
+        newTargetNames: previewItems
       });
 
-      // 同时更新全局列表配置
-      await saveListsToGlobal(updatedRuleInfo.lists);
+      // 获取当前的全局模板配置
+      const { getGlobalMapLists } = await import('@/lib/rules');
+      const currentGlobalTemplates = await getGlobalMapLists();
       
-      console.log('全局列表配置已更新');
+      // 查找并覆盖当前使用的模板
+      const updatedGlobalTemplates = currentGlobalTemplates.map(template => {
+        if (template.name === activeList.name) {
+          // 覆盖当前使用的模板
+          return {
+            ...template,
+            targetNames: previewItems
+          };
+        }
+        return template;
+      });
+      
+      console.log('覆盖全局模板:', {
+        originalTemplates: currentGlobalTemplates,
+        updatedTemplates: updatedGlobalTemplates,
+        targetTemplateName: activeList.name
+      });
+      
+      // 更新全局模板配置（覆盖指定模板）
+      await saveGlobalMapLists(updatedGlobalTemplates);
+      
+      console.log('全局模板配置已更新');
 
       onOverwriteRule(updatedRule);
       onOpenChange(false);
     } catch (error) {
-      console.error('覆盖规则失败:', error);
+      console.error('保存&覆盖模板失败:', error);
     }
   };
 
@@ -160,41 +173,81 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   };
 
   /**
-   * 确认另存为新规则模板
+   * 保存&新建模板
+   * 保存更新规则实例并且在全局列表映射规则下以此新建列表模板
    */
   const handleConfirmSaveAsNewTemplate = async () => {
     if (!newTemplateName.trim()) return;
     
     try {
-      // 创建新的列表配置，包含重命名后的列表
-      const newListConfig: ListConfig = {
+      // 1. 获取当前的全局模板配置
+      const { getGlobalMapLists } = await import('@/lib/rules');
+      const currentGlobalTemplates = await getGlobalMapLists();
+      
+      // 2. 创建新的模板配置
+      const newTemplateConfig: ListConfig = {
         name: newTemplateName.trim(),
         targetNames: previewItems
       };
       
-      // 获取当前的全局列表配置
-      const { getGlobalMapLists } = await import('@/lib/rules');
-      const currentGlobalLists = await getGlobalMapLists();
+      // 3. 将新模板添加到全局模板列表中（保持现有模板完全不变）
+      const updatedGlobalTemplates = [...currentGlobalTemplates, newTemplateConfig];
       
-      // 将新列表添加到现有全局列表中
-      const updatedLists = [...currentGlobalLists, newListConfig];
+      // 4. 更新规则实例：只修改当前活动列表的内容，不影响全局模板
+      const updatedRuleLists = [...rule.info.lists];
+      updatedRuleLists[rule.info.activeListIndex] = {
+        ...activeList,
+        targetNames: previewItems
+      };
       
-      console.log('保存新模板:', {
-        newListConfig,
-        currentGlobalLists,
-        updatedLists
+      const updatedRuleInfo: RuleMapInfo = {
+        lists: updatedRuleLists,
+        activeListIndex: rule.info.activeListIndex,
+        includeExt
+      };
+      
+      const updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
+        ...rule,
+        info: updatedRuleInfo
+      };
+
+      console.log('保存&新建模板:', {
+        originalRule: rule,
+        updatedRule,
+        newTemplateConfig,
+        currentGlobalTemplates,
+        updatedGlobalTemplates,
+        templateCount: {
+          before: currentGlobalTemplates.length,
+          after: updatedGlobalTemplates.length
+        }
       });
       
-      // 更新全局列表配置
-      await saveGlobalMapLists(updatedLists);
+      // 5. 更新全局模板配置（添加新模板，不修改现有模板）
+      await saveGlobalMapLists(updatedGlobalTemplates);
       
-      console.log('全局列表配置已更新');
+      console.log('全局模板配置已更新');
+      
+      // 6. 更新规则实例，但使用更新后的全局模板
+      const finalUpdatedRuleInfo: RuleMapInfo = {
+        lists: updatedGlobalTemplates,  // 使用包含新模板的全局模板列表
+        activeListIndex: rule.info.activeListIndex,
+        includeExt
+      };
+      
+      const finalUpdatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
+        ...rule,
+        info: finalUpdatedRuleInfo
+      };
+
+      // 7. 触发当前规则实例更新回调
+      onOverwriteRule(finalUpdatedRule);
       
       setIsRenamingForTemplate(false);
       setNewTemplateName('');
       onOpenChange(false);
     } catch (error) {
-      console.error('保存新模板失败:', error);
+      console.error('保存&新建模板失败:', error);
     }
   };
 
@@ -375,7 +428,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         {!isRenamingForTemplate && (
           <div className="flex justify-between items-center pt-4 border-t">
             <div className="text-sm text-muted-foreground">
-              编辑完成后可以覆盖现有规则或另存为新规则模板
+              编辑完成后可以保存并覆盖现有模板，或保存并新建模板
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleCancel}>
@@ -383,11 +436,11 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                 取消
               </Button>
               <Button variant="outline" onClick={handleOverwrite}>
-                覆盖现有规则
+                保存&覆盖模板
               </Button>
               <Button onClick={handleStartSaveAsNewTemplate}>
                 <IconPlus className="h-4 w-4 mr-2" />
-                另存为新规则模板
+                保存&新建模板
               </Button>
             </div>
           </div>

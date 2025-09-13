@@ -27,6 +27,26 @@ import { RuleMapSecondaryEditDialog } from './rule-map-secondary-edit-dialog';
 import { RULE_MAP_TYPE, type RuleMapInfo, saveGlobalMapLists } from '@/lib/rules';
 import { RuleNameInputDialog } from './rule-name-input-dialog';
 
+/**
+ * 获取规则的默认名称
+ * 对于列表映射规则，返回当前活动列表的名称
+ * 对于其他规则类型，返回规则类型的标签
+ */
+function getDefaultRuleName(rule: Rule): string {
+  if (rule.type === RULE_MAP_TYPE) {
+    const mapRule = rule as Rule<typeof RULE_MAP_TYPE, RuleMapInfo>;
+    const { lists, activeListIndex } = mapRule.info;
+    
+    // 如果有有效的列表配置且活动索引有效，返回活动列表的名称
+    if (lists.length > 0 && activeListIndex >= 0 && activeListIndex < lists.length) {
+      return lists[activeListIndex].name;
+    }
+  }
+  
+  // 默认返回规则类型的标签
+  return getRuleDefine(rule.type).label;
+}
+
 export interface RulesPanelProps {
   profileId: string;
 }
@@ -309,7 +329,7 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
       />
       <RuleNameInputDialog
         open={nameInputDialogOpened}
-        defaultName={pendingRule ? getRuleDefine(pendingRule.type).label : ''}
+        defaultName={pendingRule ? getDefaultRuleName(pendingRule) : ''}
         onConfirm={onRuleNameConfirm}
         onCancel={onRuleNameCancel}
       />
