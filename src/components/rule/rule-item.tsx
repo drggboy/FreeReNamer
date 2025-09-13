@@ -5,14 +5,17 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
+  ContextMenuSeparator,
 } from '../ui/context-menu';
 import { Switch } from '../ui/switch';
+import { RULE_MAP_TYPE } from '@/lib/rules';
 
 export interface RuleItemProps {
   rule: Rule;
   onDel?: () => void;
   onSwitch?: (checked: boolean) => void;
   onEdit?: () => void;
+  onSecondaryEdit?: () => void;
 }
 
 export const RuleItem: FC<RuleItemProps> = ({
@@ -20,6 +23,7 @@ export const RuleItem: FC<RuleItemProps> = ({
   onDel,
   onSwitch,
   onEdit,
+  onSecondaryEdit,
 }) => {
   const label = useMemo(() => {
     return getRuleDefine(rule.type).label;
@@ -52,7 +56,12 @@ export const RuleItem: FC<RuleItemProps> = ({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={onEdit}>编辑</ContextMenuItem>
+        {rule.type === RULE_MAP_TYPE && onSecondaryEdit ? (
+          <ContextMenuItem onClick={onSecondaryEdit}>编辑</ContextMenuItem>
+        ) : (
+          <ContextMenuItem onClick={onEdit}>编辑</ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={handleDel}>删除</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

@@ -23,6 +23,8 @@ import { updateProfile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { ScrollArea } from '../ui/scroll-area';
 import { RuleEditDialog } from './rule-edit-dialog';
+import { RuleMapSecondaryEditDialog } from './rule-map-secondary-edit-dialog';
+import { RULE_MAP_TYPE, type RuleMapInfo, saveGlobalMapLists } from '@/lib/rules';
 import { RuleNameInputDialog } from './rule-name-input-dialog';
 
 export interface RulesPanelProps {
@@ -36,11 +38,22 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   const [targetEditRule, setTargetEditRule] = useState<Rule | undefined>();
   const [nameInputDialogOpened, setNameInputDialogOpened] = useState(false);
   const [pendingRule, setPendingRule] = useState<Rule | null>(null);
+  const [secondaryEditRule, setSecondaryEditRule] = useState<Rule<typeof RULE_MAP_TYPE, RuleMapInfo> | undefined>();
 
   const { mutate: addRule } = useMutation({
     mutationFn: async (rule: Rule) => {
       if (!profile) {
         return;
+      }
+
+      // 如果是列表映射规则，同时更新全局配置
+      if (rule.type === RULE_MAP_TYPE) {
+        const mapRule = rule as Rule<typeof RULE_MAP_TYPE, RuleMapInfo>;
+        try {
+          await saveGlobalMapLists(mapRule.info.lists);
+        } catch (error) {
+          console.error('保存全局列表配置失败:', error);
+        }
       }
 
       return updateProfile(profileId, {
@@ -119,6 +132,16 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
         return;
       }
 
+      // 如果是列表映射规则，同时更新全局配置
+      if (rule.type === RULE_MAP_TYPE) {
+        const mapRule = rule as Rule<typeof RULE_MAP_TYPE, RuleMapInfo>;
+        try {
+          await saveGlobalMapLists(mapRule.info.lists);
+        } catch (error) {
+          console.error('保存全局列表配置失败:', error);
+        }
+      }
+
       return updateProfile(profileId, {
         ...profile,
         rules: profile.rules.map((r) => {
@@ -174,6 +197,30 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
     setTargetEditRule(undefined);
   }
 
+  /**
+   * 处理二次编辑
+   */
+  function handleSecondaryEdit(rule: Rule) {
+    if (rule.type === RULE_MAP_TYPE) {
+      setSecondaryEditRule(rule as Rule<typeof RULE_MAP_TYPE, RuleMapInfo>);
+    }
+  }
+
+  /**
+   * 关闭二次编辑对话框
+   */
+  function onCloseSecondaryEditDialog() {
+    setSecondaryEditRule(undefined);
+  }
+
+
+  /**
+   * 覆盖现有规则
+   */
+  function handleOverwriteRule(updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo>) {
+    updateRule(updatedRule);
+  }
+
   function onRuleNameConfirm(name: string) {
     if (pendingRule) {
       addRule({ ...pendingRule, name });
@@ -223,6 +270,7 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
                     updateRuleChecked({ ruleId: rule.id, checked })
                   }
                   onEdit={() => setTargetEditRule(rule)}
+                  onSecondaryEdit={() => handleSecondaryEdit(rule)}
                 />
               );
             })}
@@ -265,6 +313,16 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
         onConfirm={onRuleNameConfirm}
         onCancel={onRuleNameCancel}
       />
+      
+      {/* 列表映射规则二次编辑对话框 */}
+      {secondaryEditRule && (
+        <RuleMapSecondaryEditDialog
+          open={!!secondaryEditRule}
+          onOpenChange={onCloseSecondaryEditDialog}
+          rule={secondaryEditRule}
+          onOverwriteRule={handleOverwriteRule}
+        />
+      )}
     </>
   );
 };
