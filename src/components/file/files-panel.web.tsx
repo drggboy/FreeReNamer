@@ -21,6 +21,7 @@ import { uniqBy } from 'lodash-es';
 import { ChevronDown, ChevronUp, Settings, RefreshCw, FolderOpen } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
+import { calculateFilenameWidth, shouldAdjustFilenameWidth } from '@/lib/filename-width-calculator';
 
 // 访问FileItem组件中的缩略图缓存对象
 declare global {
@@ -82,12 +83,77 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 当前列宽，用于暂存拖动过程中的列宽
   const [currentWidths, setCurrentWidths] = useState<ColumnWidths>({...columnWidths});
   
+  // 标记是否已经进行过初始宽度调整
+  const hasInitialAdjusted = useRef<boolean>(false);
+  
+  // 记录当前文件夹路径，用于检测文件夹变化
+  const lastFolderPath = useRef<string>('');
+  
+  // 获取容器宽度
+  const getContainerWidth = useCallback(() => {
+    if (!containerRef.current) return 1000; // 默认值
+    return containerRef.current.getBoundingClientRect().width;
+  }, []);
+
   // 同步全局状态和本地状态
   useEffect(() => {
     if (!isResizing) {
       setCurrentWidths({...columnWidths});
     }
   }, [columnWidths, isResizing]);
+
+  // 检测文件夹变化并重置初始调整标记
+  useEffect(() => {
+    const currentFolderPath = typeof currentFolder === 'string' ? currentFolder : currentFolder?.name || '';
+    if (currentFolderPath !== lastFolderPath.current) {
+      console.log(`文件夹变化: ${lastFolderPath.current} -> ${currentFolderPath}`);
+      lastFolderPath.current = currentFolderPath;
+      hasInitialAdjusted.current = false; // 重置初始调整标记
+    }
+  }, [currentFolder]);
+
+  // 初始文件名列宽自适应调整（仅在选中新文件夹时触发一次）
+  useEffect(() => {
+    // 只在以下情况下进行初始调整：
+    // 1. 有文件列表
+    // 2. 没有在调整列宽
+    // 3. 还没有进行过初始调整
+    if (files.length === 0 || isResizing || hasInitialAdjusted.current) return;
+
+    const containerWidth = getContainerWidth();
+    if (containerWidth <= 0) return;
+
+    // 计算理想的文件名列宽
+    const idealWidth = calculateFilenameWidth(
+      files.map(file => typeof file === 'string' ? file : file.name),
+      containerWidth,
+      {
+        minWidthPercent: 1,
+        maxWidthPercent: 50, // 减少最大宽度，避免占用过多空间
+        extraPadding: 1,    // 额外padding，确保有足够空间
+        fontSize: 14,
+        maxFilenameLength: 40 // 超长文件名截断长度
+      }
+    );
+
+    // 检查是否需要调整（降低阈值，使初始调整更敏感）
+    if (shouldAdjustFilenameWidth(currentWidths.filename, idealWidth, 2)) {
+      console.log(`初始自动调整文件名列宽: ${currentWidths.filename}% -> ${idealWidth}%`);
+      
+      const newWidths = { ...currentWidths };
+      newWidths.filename = idealWidth;
+      
+      // 更新本地状态和全局状态
+      setCurrentWidths(newWidths);
+      setColumnWidths(newWidths);
+      
+      // 标记已经进行过初始调整
+      hasInitialAdjusted.current = true;
+    } else {
+      // 即使不需要调整，也要标记已经检查过
+      hasInitialAdjusted.current = true;
+    }
+  }, [files, isResizing, getContainerWidth, currentWidths, setColumnWidths]);
 
   // 当组件卸载时清理缓存
   useEffect(() => {
@@ -125,12 +191,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     return `${checkbox}rem ${index}rem ${filename}% ${time}% ${thumbnail}% ${preview}fr`;
   }, [currentWidths]);
 
-  // 获取容器宽度
-  const getContainerWidth = useCallback(() => {
-    if (!containerRef.current) return 1000; // 默认值
-    return containerRef.current.getBoundingClientRect().width;
-  }, []);
-
   // 调整列宽的处理函数
   const handleResizeColumn = useCallback((column: keyof ColumnWidths, delta: number) => {
     setCurrentWidths(prev => {
@@ -153,7 +213,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         
         // 根据列类型设置不同的最小宽度
         if (column === 'filename') {
-          minWidth = 15; // 文件名最小15%
+          minWidth = 15; // 文件名最小15%（手动调整限制）
           maxWidth = 60; // 文件名最大60%
         } else if (column === 'time') {
           minWidth = 10; // 时间最小10%
@@ -184,9 +244,16 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     }, 100);
   }, [currentWidths, setColumnWidths]);
 
-  // 重置列宽到默认值
+  // 重置列宽到默认值并重新进行自适应调整
   const resetColumnWidths = useCallback(() => {
-    setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS });
+    // 首先重置到默认值
+    const defaultWidths = { ...DEFAULT_COLUMN_WIDTHS };
+    setCurrentWidths(defaultWidths);
+    setColumnWidths(defaultWidths);
+    
+    // 重置初始调整标记，触发自适应调整
+    hasInitialAdjusted.current = false;
+    console.log('重置列宽并触发自适应调整');
   }, [setColumnWidths]);
   
   // 当文件列表或排序配置变化时，重新计算排序顺序
