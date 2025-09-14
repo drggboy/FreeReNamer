@@ -8,6 +8,7 @@ import {
   getProfileCurrentFolderAtom,
   getProfileSelectedThumbnailAtom,
   getProfileFileSortConfigAtom,
+  getProfileFolderExistsAtom,
   deleteModeAtom,
   type FileSortType,
   type ColumnWidths,
@@ -15,6 +16,8 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { useAtom, useAtomValue } from 'jotai';
 import React, { useEffect, useMemo, type FC, useState, useRef, useCallback, createRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryType } from '@/lib/query';
 import { FileItem, type FileItemHandle } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
@@ -61,6 +64,7 @@ const PX_TO_REM = 16; // 假设1rem = 16px
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 使用基于配置的状态管理
   const files = useAtomValue(getProfileFilesAtom(profileId));
+  const queryClient = useQueryClient();
   const selectedFiles = useAtomValue(getProfileSelectedFilesAtom(profileId));
   const sortConfig = useAtomValue(getProfileFileSortConfigAtom(profileId));
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
@@ -86,6 +90,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 记录当前文件夹路径，用于检测文件夹变化
   const lastFolderPath = useRef<string>('');
   
+  // 记录上次的列宽，避免useEffect无限循环
+  const lastColumnWidths = useRef<ColumnWidths>(columnWidths);
+  
   // 获取容器宽度
   const getContainerWidth = useCallback(() => {
     if (!containerRef.current) return 1000; // 默认值
@@ -97,6 +104,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     if (!isResizing) {
       setCurrentWidths({...columnWidths});
     }
+    // 更新ref记录的列宽
+    lastColumnWidths.current = columnWidths;
   }, [columnWidths, isResizing]);
 
   // 检测文件夹变化并重置初始调整标记
@@ -117,11 +126,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     // 1. 有文件列表
     // 2. 没有在调整列宽
     // 3. 还没有进行过初始调整
-    console.log('检查初始调整条件:', { 
-      filesLength: files.length, 
-      isResizing, 
-      hasInitialAdjusted: hasInitialAdjusted.current 
-    });
     
     if (files.length === 0 || isResizing || hasInitialAdjusted.current) return;
 
@@ -142,15 +146,16 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     );
 
     // 检查是否需要调整（降低阈值，使初始调整更敏感）
-    if (shouldAdjustFilenameWidth(currentWidths.filename, idealWidth, 2)) {
-      console.log(`初始自动调整文件名列宽: ${currentWidths.filename}% -> ${idealWidth}%`);
+    const currentFilenameWidth = lastColumnWidths.current.filename;
+    if (shouldAdjustFilenameWidth(currentFilenameWidth, idealWidth, 2)) {
+      console.log(`初始自动调整文件名列宽: ${currentFilenameWidth}% -> ${idealWidth}%`);
       
-      const newWidths = { ...currentWidths };
+      const newWidths = { ...lastColumnWidths.current };
       newWidths.filename = idealWidth;
       
-      // 更新本地状态和全局状态
-      setCurrentWidths(newWidths);
+      // 更新全局状态，本地状态会自动同步
       setColumnWidths(newWidths);
+      lastColumnWidths.current = newWidths;
       
       // 标记已经进行过初始调整
       hasInitialAdjusted.current = true;
@@ -158,7 +163,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       // 即使不需要调整，也要标记已经检查过
       hasInitialAdjusted.current = true;
     }
-  }, [files, isResizing, getContainerWidth, currentWidths, setColumnWidths]);
+  }, [files, isResizing, getContainerWidth, setColumnWidths]);
 
   const checked = useMemo(
     () => files.length > 0 && selectedFiles.length === files.length,
@@ -355,6 +360,16 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       return;
     }
 
+    // 清理React Query缓存，确保文件信息重新查询
+    console.log('选择新文件夹时清理React Query文件信息缓存');
+    queryClient.removeQueries({ 
+      queryKey: [QueryType.FileItemInfo],
+      exact: false 
+    });
+    
+    // 清理缩略图缓存
+    clearThumbnailCache();
+
     // 设置当前文件夹路径
     setCurrentFolder(openDir);
 
@@ -363,6 +378,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
     // 替换文件列表（而不是添加到现有列表）
     atomStore.set(getProfileFilesAtom(profileId), files);
+    
+    // 设置文件夹存在状态为true（刚选择的文件夹肯定存在）
+    atomStore.set(getProfileFolderExistsAtom(profileId), true);
     
     // 清空选中状态
     atomStore.set(getProfileSelectedFilesAtom(profileId), []);
@@ -373,15 +391,31 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   async function onRefreshFiles() {
     try {
+      console.log(`🔄 [刷新] 开始刷新，当前文件夹: ${currentFolder}`);
+      
       if (!currentFolder) {
-        console.log('没有选择文件夹，无法刷新');
+        console.log('❌ [刷新] 没有选择文件夹，无法刷新');
         return;
       }
       
+      // 清理React Query缓存，确保文件信息重新查询
+      console.log('🧹 [刷新] 清理React Query文件信息缓存');
+      queryClient.removeQueries({ 
+        queryKey: [QueryType.FileItemInfo],
+        exact: false 
+      });
+      
+      // 清理缩略图缓存
+      console.log('🧹 [刷新] 清理缩略图缓存');
+      clearThumbnailCache();
+      
       // 重新扫描当前文件夹
+      console.log(`📂 [刷新] 重新扫描文件夹: ${currentFolder}`);
       const files = await invoke<string[]>('read_dir', { path: currentFolder });
+      console.log(`📂 [刷新] 扫描完成，找到 ${files.length} 个文件`);
       
       // 更新文件列表
+      console.log('📝 [刷新] 更新文件列表到atom');
       atomStore.set(getProfileFilesAtom(profileId), files);
       
       // 清空选中状态
@@ -390,9 +424,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       // 清空缩略图选中状态
       atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
       
-      console.log(`已刷新 ${files.length} 个文件`);
+      console.log(`✅ [刷新] 刷新完成，共 ${files.length} 个文件`);
     } catch (error) {
-      console.error('刷新文件列表失败:', error);
+      console.error('❌ [刷新] 刷新文件列表失败:', error);
     }
   }
 
@@ -686,7 +720,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       <ScrollArea className="h-[calc(100%-6.5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
           {sortedFiles.map((file, displayIndex) => {
-            fileItemRefs.current.set(file, createRef<FileItemHandle>());
             const fileKey = typeof file === 'string' ? file : file.name;
             return (
               <FileItem

@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
-import { getProfileCurrentFolderAtom, currentFolderAtom } from '@/lib/atoms';
-import { IconFolder } from '@tabler/icons-react';
+import { getProfileCurrentFolderAtom, currentFolderAtom, getProfileFolderExistsAtom } from '@/lib/atoms';
+import { IconFolder, IconAlertTriangle } from '@tabler/icons-react';
 
 interface CurrentFolderDisplayProps {
   /**
@@ -31,6 +31,12 @@ export function CurrentFolderDisplay({
   const currentFolder = useAtomValue(
     profileId ? getProfileCurrentFolderAtom(profileId) : currentFolderAtom
   );
+  
+  // 获取文件夹存在状态（仅在Tauri环境下使用）
+  const folderExists = profileId ? useAtomValue(getProfileFolderExistsAtom(profileId)) : undefined;
+  
+  // 调试日志
+  console.log(`🔍 [CurrentFolderDisplay] profileId: ${profileId}, currentFolder: ${currentFolder}, folderExists: ${folderExists}`);
 
   // 如果没有选中文件夹，显示提示信息
   if (!currentFolder) {
@@ -57,6 +63,23 @@ export function CurrentFolderDisplay({
     // 显示 ".../{倒数第二级}/{最后一级}"
     return `.../${parts.slice(-2).join('/')}`;
   };
+
+  // 检查文件夹是否不存在（仅在Tauri环境下且明确标记为不存在时）
+  const isFolderMissing = folderExists === false;
+  
+  if (isFolderMissing) {
+    return (
+      <div className={`inline-flex items-center px-2 py-1 text-xs bg-red-50 border border-red-200 rounded max-w-xs ${className}`}>
+        <IconAlertTriangle className="mr-1 size-3 text-red-600 flex-shrink-0" />
+        <div className="flex flex-col">
+          <span className="text-red-700 font-medium">文件夹不存在</span>
+          <span className="truncate text-red-600 text-xs" title={displayPath}>
+            {formatPath(displayPath)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`inline-flex items-center px-2 py-1 text-xs bg-blue-50 border border-blue-200 rounded max-w-xs ${className}`}>

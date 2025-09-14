@@ -37,7 +37,21 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     data: fileItemInfo,
     error,
     isError,
+    isLoading,
+    isSuccess,
   } = useQuery(fileItemInfoQueryOptions(profileId, file, index, sortConfig));
+
+  // 调试文件信息查询状态
+  useEffect(() => {
+    console.log(`=== FileItem 查询状态 ===`);
+    console.log(`文件: ${file}`);
+    console.log(`isLoading: ${isLoading}`);
+    console.log(`isSuccess: ${isSuccess}`);
+    console.log(`isError: ${isError}`);
+    console.log(`error:`, error);
+    console.log(`fileItemInfo:`, fileItemInfo);
+    console.log(`========================`);
+  }, [file, isLoading, isSuccess, isError, error, fileItemInfo]);
 
   // 根据平台选择正确的selectedFiles atom
   const selectedFiles = useAtomValue(__PLATFORM__ === __PLATFORM_TAURI__ ? getProfileSelectedFilesAtom(profileId) : selectedFilesAtom);
@@ -216,10 +230,17 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
   // 获取图片缩略图URL
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
-    if (!fileItemInfo?.fileInfo.isImage) return null;
+    console.log(`=== 开始获取缩略图 ===`);
+    console.log(`文件路径: ${file}`);
+    console.log(`文件信息:`, fileItemInfo?.fileInfo);
     
-    // 首先检查缓存中是否已有此文件的缩略图
-    const cacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
+    if (!fileItemInfo?.fileInfo.isImage) {
+      console.log(`不是图片文件或文件信息未加载: isImage=${fileItemInfo?.fileInfo.isImage}`);
+      return null;
+    }
+    
+    // 使用文件路径作为缓存键，更加稳定
+    const cacheKey = `${file}`;
     if (thumbnailCache.has(cacheKey)) {
       console.log('使用缓存的缩略图:', file);
       return thumbnailCache.get(cacheKey) || null;
@@ -227,41 +248,59 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
     try {
       // 检查是否在Tauri环境
+      console.log(`检查Tauri环境: window.__TAURI_IPC__ = ${!!(typeof window !== 'undefined' && window.__TAURI_IPC__)}`);
+      
       // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
       if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
+        console.log(`在Tauri环境下处理图片: ${file}`);
+        
         try {
-          // 尝试方式1：使用convertFileSrc
-          const { convertFileSrc } = await import('@tauri-apps/api/tauri');
-          const url = convertFileSrc(file);
-          console.log('Tauri图片URL(convertFileSrc):', url);
+          // 首先检查文件是否存在
+          console.log(`🔍 [Tauri] 开始导入invoke函数`);
+          const { invoke } = await import('@tauri-apps/api');
+          console.log(`🔍 [Tauri] invoke函数导入成功`);
           
-          // 尝试方式2：读取文件内容转为base64
-          try {
-            const { readBinaryFile } = await import('@tauri-apps/api/fs');
-            const { getMimeType } = await import('@/lib/file');
-            const fileContent = await readBinaryFile(file);
-            const mimeType = getMimeType(fileItemInfo.fileInfo.ext);
-            
-            // 将二进制数据转换为base64字符串
-            const base64Content = btoa(
-              new Uint8Array(fileContent)
-                .reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            
-            const dataUrl = `data:${mimeType};base64,${base64Content}`;
-            console.log('Tauri图片URL(base64):', dataUrl.substring(0, 50) + '...');
-            
-            // 保存到缓存
-            thumbnailCache.set(cacheKey, dataUrl);
-            return dataUrl;
-          } catch (readError) {
-            console.warn('读取文件内容失败，使用convertFileSrc:', readError);
-            // 保存到缓存
-            thumbnailCache.set(cacheKey, url);
-            return url;
+          console.log(`🔍 [Tauri] 检查文件是否存在: ${file}`);
+          const fileExists = await invoke<boolean>('exists', { path: file });
+          console.log(`✅ [Tauri] 文件存在检查结果: ${fileExists}`);
+          
+          if (!fileExists) {
+            throw new Error(`文件不存在: ${file}`);
           }
+          
+          // 直接使用base64方式，避免asset协议问题
+          console.log(`🔍 [Tauri] 开始导入readBinaryFile和getMimeType`);
+          const { readBinaryFile } = await import('@tauri-apps/api/fs');
+          const { getMimeType } = await import('@/lib/file');
+          console.log(`✅ [Tauri] 函数导入成功`);
+          
+          console.log(`🖼️ [Tauri] 开始读取文件二进制内容: ${file}`);
+          const fileContent = await readBinaryFile(file);
+          console.log(`📦 [Tauri] 文件内容读取成功，大小: ${fileContent.length} 字节`);
+          
+          const mimeType = getMimeType(fileItemInfo.fileInfo.ext);
+          console.log(`🏷️ [Tauri] 文件MIME类型: ${mimeType}`);
+          
+          console.log(`🔄 [Tauri] 开始转换为base64...`);
+          // 将二进制数据转换为base64字符串
+          const base64Content = btoa(
+            new Uint8Array(fileContent)
+              .reduce((data, byte) => data + String.fromCharCode(byte), '')
+          );
+          console.log(`🔄 [Tauri] base64转换完成，长度: ${base64Content.length}`);
+          
+          const dataUrl = `data:${mimeType};base64,${base64Content}`;
+          console.log(`✅ [Tauri] 生成base64 URL成功，总长度: ${dataUrl.length}`);
+          console.log('🖼️ [Tauri] 图片URL预览:', dataUrl.substring(0, 50) + '...');
+          
+          // 保存到缓存
+          thumbnailCache.set(cacheKey, dataUrl);
+          console.log(`💾 [Tauri] 缓存保存成功`);
+          return dataUrl;
         } catch (err) {
-          console.error('Tauri读取图片错误:', err);
+          console.error('❌ [Tauri] 读取图片错误:', err);
+          console.error('❌ [Tauri] 错误详情:', (err as any)?.message || err);
+          console.error('❌ [Tauri] 错误堆栈:', (err as any)?.stack || '无堆栈信息');
           throw err;
         }
       }
@@ -295,29 +334,46 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   useEffect(() => {
     let mounted = true;
     
+    console.log(`🔍 [缩略图检查] 文件: ${file}`);
+    console.log(`🔍 [缩略图检查] fileItemInfo存在: ${!!fileItemInfo}`);
+    console.log(`🔍 [缩略图检查] fileItemInfo.fileInfo存在: ${!!fileItemInfo?.fileInfo}`);
+    console.log(`🔍 [缩略图检查] isImage: ${fileItemInfo?.fileInfo?.isImage}`);
+    
     if (fileItemInfo?.fileInfo.isImage) {
+      console.log(`✅ [缩略图] 确认为图片文件: ${file}`);
+      
       // 检查缓存中是否已有此文件的缩略图
-      const cacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
+      const cacheKey = `${file}`;
       const cachedUrl = thumbnailCache.get(cacheKey);
+      console.log(`🔍 [缩略图缓存] 缓存键: ${cacheKey}, 缓存存在: ${!!cachedUrl}`);
       
       if (cachedUrl) {
         // 如果缓存中有，直接使用
+        console.log(`✅ [缩略图缓存] 使用缓存: ${file}`);
         setThumbnailUrl(cachedUrl);
         setThumbnailLoading(false);
         setThumbnailError(false);
       } else {
         // 否则加载新的缩略图
+        console.log(`🔄 [缩略图加载] 开始加载: ${file}`);
         setThumbnailLoading(true);
         setThumbnailError(false);
         
         getThumbnailUrl()
           .then(url => {
+            console.log(`🔄 [缩略图加载] getThumbnailUrl返回: ${url ? '有URL' : '无URL'}, mounted: ${mounted}`);
             if (mounted && url) {
+              console.log(`✅ [缩略图加载] 成功: ${file}`);
               setThumbnailUrl(url);
+            } else {
+              console.log(`❌ [缩略图加载] 失败: ${file}, url存在: ${!!url}, mounted: ${mounted}`);
+              if (mounted) {
+                setThumbnailError(true);
+              }
             }
           })
           .catch(err => {
-            console.error('缩略图加载错误:', err);
+            console.error(`❌ [缩略图加载] 错误 ${file}:`, err);
             if (mounted) {
               setThumbnailError(true);
             }
@@ -329,6 +385,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           });
       }
     } else {
+      console.log(`❌ [缩略图] 非图片文件或信息未加载: ${file}, isImage: ${fileItemInfo?.fileInfo?.isImage}`);
       setThumbnailUrl(null);
       setThumbnailError(false);
       setThumbnailLoading(false);
@@ -339,7 +396,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       
       // 注意：不再在每次组件卸载时释放URL，而是在应用关闭或清理缓存时统一处理
     };
-  }, [fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.fullName, file, getThumbnailUrl]);
+  }, [fileItemInfo?.fileInfo.isImage, file, getThumbnailUrl]);
 
   // 处理图片点击事件，打开图片文件
   const handleImageClick = useCallback(async () => {

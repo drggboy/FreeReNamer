@@ -1,6 +1,7 @@
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai/utils';
 import type { UndoOperation, FileSortConfig } from './index';
+import { debouncedSaveProfileState } from '../profile-persistence';
 
 /**
  * 每个配置的独立状态
@@ -12,6 +13,7 @@ export interface ProfileState {
   selectedThumbnail: string | null;
   undoHistory: UndoOperation[];
   fileSortConfig: FileSortConfig;
+  folderExists?: boolean; // 文件夹是否存在（仅在Tauri环境下使用）
 }
 
 /**
@@ -26,7 +28,8 @@ export const defaultProfileState: ProfileState = {
   fileSortConfig: {
     type: 'index',
     order: 'asc'
-  }
+  },
+  folderExists: undefined // 默认为undefined，表示未检查
 };
 
 /**
@@ -46,10 +49,13 @@ export const getProfileFilesAtom = (profileId: string) =>
     (get, set, update: string[] | FileSystemFileHandle[] | ((prev: string[] | FileSystemFileHandle[]) => string[] | FileSystemFileHandle[])) => {
       const currentState = get(profileStateAtomFamily(profileId));
       const newFiles = typeof update === 'function' ? update(currentState.files) : update;
-      set(profileStateAtomFamily(profileId), {
+      const newState = {
         ...currentState,
         files: newFiles
-      });
+      };
+      set(profileStateAtomFamily(profileId), newState);
+      
+      // 文件列表不再自动保存，只有文件夹路径和排序配置会被保存
     }
   );
 
@@ -77,10 +83,14 @@ export const getProfileCurrentFolderAtom = (profileId: string) =>
     (get) => get(profileStateAtomFamily(profileId)).currentFolder,
     (get, set, currentFolder: string | FileSystemDirectoryHandle | null) => {
       const currentState = get(profileStateAtomFamily(profileId));
-      set(profileStateAtomFamily(profileId), {
+      const newState = {
         ...currentState,
         currentFolder
-      });
+      };
+      set(profileStateAtomFamily(profileId), newState);
+      
+      // 自动保存状态到持久化存储（防抖）
+      debouncedSaveProfileState(profileId, newState);
     }
   );
 
@@ -123,10 +133,31 @@ export const getProfileFileSortConfigAtom = (profileId: string) =>
     (get, set, update: FileSortConfig | ((prev: FileSortConfig) => FileSortConfig)) => {
       const currentState = get(profileStateAtomFamily(profileId));
       const newFileSortConfig = typeof update === 'function' ? update(currentState.fileSortConfig) : update;
-      set(profileStateAtomFamily(profileId), {
+      const newState = {
         ...currentState,
         fileSortConfig: newFileSortConfig
-      });
+      };
+      set(profileStateAtomFamily(profileId), newState);
+      
+      // 自动保存状态到持久化存储（防抖）
+      debouncedSaveProfileState(profileId, newState);
+    }
+  );
+
+/**
+ * 获取指定配置的文件夹存在状态原子
+ */
+export const getProfileFolderExistsAtom = (profileId: string) =>
+  atom(
+    (get) => get(profileStateAtomFamily(profileId)).folderExists,
+    (get, set, folderExists: boolean | undefined) => {
+      const currentState = get(profileStateAtomFamily(profileId));
+      const newState = {
+        ...currentState,
+        folderExists
+      };
+      set(profileStateAtomFamily(profileId), newState);
+      // 注意：folderExists 不需要持久化保存，因为每次启动都会重新检查
     }
   );
 
@@ -135,4 +166,33 @@ export const getProfileFileSortConfigAtom = (profileId: string) =>
  */
 export const resetProfileState = (profileId: string, atomStore: any) => {
   atomStore.set(profileStateAtomFamily(profileId), defaultProfileState);
+};
+
+/**
+ * 从持久化存储加载配置状态
+ */
+export const loadProfileStateFromStorage = async (profileId: string, atomStore: any) => {
+  try {
+    const { loadProfileState } = await import('../profile-persistence');
+    const savedState = await loadProfileState(profileId);
+    
+    if (savedState) {
+      // 合并保存的状态和默认状态
+      const currentState = atomStore.get(profileStateAtomFamily(profileId));
+      const mergedState = {
+        ...defaultProfileState,
+        ...currentState,
+        ...savedState
+      };
+      
+      atomStore.set(profileStateAtomFamily(profileId), mergedState);
+      console.log(`已加载配置 ${profileId} 的保存状态`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error(`加载配置 ${profileId} 状态失败:`, error);
+    return false;
+  }
 };
