@@ -59,3 +59,33 @@
       @apply bg-background text-foreground;
     }
   }
+
+  /* 生产环境禁用全局右键菜单 - 只有在打包的exe中才生效 */
+  .disable-context-menu {
+    -webkit-user-select: none;
+    -webkit-context-menu: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* 允许输入框和可编辑元素选择文本 */
+  .disable-context-menu input, 
+  .disable-context-menu textarea, 
+  .disable-context-menu [contenteditable="true"] {
+    -webkit-user-select: text;
+    -webkit-context-menu: auto;
+  }
+  
+  /* 允许自定义右键菜单区域 */
+  .disable-context-menu [data-radix-context-menu-trigger],
+  .disable-context-menu [data-radix-context-menu-content],
+  .disable-context-menu [data-radix-context-menu-portal],
+  .disable-context-menu .allow-context-menu {
+    -webkit-user-select: text;
+    -webkit-context-menu: auto;
+  }
+  
+  /* 保持文件列表等功能区域的交互性 */
+  .disable-context-menu [data-radix-context-menu-trigger] * {
+    -webkit-user-select: text;
+  }

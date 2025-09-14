@@ -73,7 +73,7 @@ export const ProfileNav: FC<ProfileNavProps> = ({ id, disableDel = false }) => {
         <Link
           to="/profile/$profileId"
           params={{ profileId: id }}
-          className="line-clamp-1 h-8 w-full break-all rounded px-4 text-sm leading-8 ring-offset-background transition-colors data-[status=active]:bg-primary data-[status=active]:hover:bg-primary/85 hover:bg-accent data-[status=active]:text-primary-foreground hover:text-accent-foreground"
+          className="line-clamp-1 h-8 w-full break-all rounded px-4 text-sm leading-8 ring-offset-background transition-colors data-[status=active]:bg-primary data-[status=active]:hover:bg-primary/85 hover:bg-accent data-[status=active]:text-primary-foreground hover:text-accent-foreground allow-context-menu"
         >
           {profile.name}
         </Link>

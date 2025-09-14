@@ -40,7 +40,7 @@ export const RuleItem: FC<RuleItemProps> = ({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="grid min-h-8 w-full grid-cols-[25%_100px_1fr_3rem] divide-x break-all text-sm hover:bg-neutral-100">
+        <div className="grid min-h-8 w-full grid-cols-[25%_100px_1fr_3rem] divide-x break-all text-sm hover:bg-neutral-100 allow-context-menu">
           <span className="flex size-full items-center px-2 py-1">
             <span>{rule.name}</span>
           </span>
