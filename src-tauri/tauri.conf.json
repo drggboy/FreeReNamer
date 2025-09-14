@@ -30,7 +30,15 @@
       {
         "title": "FreeReNamer",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": true,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false
       }
     ],
     "security": {

@@ -7,6 +7,8 @@ import { Provider } from 'jotai';
 import { atomStore } from './lib/atoms';
 import { Toaster } from 'sonner';
 import { preloadMonacoEditor } from './lib/monaco-preload';
+import { AppLoading } from './components/loading/app-loading';
+import { Suspense, useEffect } from 'react';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,25 +27,47 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// 在应用启动时预加载 Monaco Editor
-// 使用 requestIdleCallback 在浏览器空闲时进行预加载，避免阻塞主线程
-const preload = () => {
-  preloadMonacoEditor().catch(console.error);
+/**
+ * 延迟预加载 Monaco Editor
+ * 避免阻塞应用启动，在应用渲染完成后再加载
+ */
+const delayedPreloadMonaco = () => {
+  // 延迟更长时间，确保应用已完全启动
+  setTimeout(() => {
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => {
+        preloadMonacoEditor().catch(console.error);
+      }, { timeout: 10000 });
+    } else {
+      setTimeout(() => {
+        preloadMonacoEditor().catch(console.error);
+      }, 2000);
+    }
+  }, 3000);
 };
 
-if (window.requestIdleCallback) {
-  // 在浏览器空闲时预加载，超时时间为 5 秒
-  window.requestIdleCallback(preload, { timeout: 5000 });
-} else {
-  // 降级到 setTimeout
-  setTimeout(preload, 1000);
-}
+/**
+ * 应用主组件
+ * 包含启动优化和Tauri窗口显示逻辑
+ */
+const App = () => {
+  useEffect(() => {
+    console.log('App initialized');
+    
+    // 启动Monaco Editor延迟预加载
+    delayedPreloadMonaco();
+  }, []);
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <QueryClientProvider client={queryClient}>
-    <Provider store={atomStore}>
-      <RouterProvider router={router} />
-      <Toaster position="top-right" richColors />
-    </Provider>
-  </QueryClientProvider>,
-);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Provider store={atomStore}>
+        <Suspense fallback={<AppLoading />}>
+          <RouterProvider router={router} />
+        </Suspense>
+        <Toaster position="top-right" richColors />
+      </Provider>
+    </QueryClientProvider>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(<App />);
