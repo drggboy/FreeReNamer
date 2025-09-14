@@ -21,10 +21,11 @@ import { ScrollArea } from '../ui/scroll-area';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
-import { ChevronDown, ChevronUp, Settings, RefreshCw, FolderOpen, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, RefreshCw, Trash2 } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 import { calculateFilenameWidth, shouldAdjustFilenameWidth } from '@/lib/filename-width-calculator';
+import { CurrentFolderDisplay } from '@/components/global/current-folder-display';
 
 export interface FilesPanelProps {
   profileId: string;
@@ -511,10 +512,19 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   return (
     <div className="size-full">
-      <div className="flex w-full justify-between gap-x-2 pb-4">
+      <div className="flex w-full justify-between items-center gap-x-2 pb-2">
         <div className="flex items-center gap-x-2">
           <Button size="sm" onClick={onSelectFolder}>
             选择文件夹
+          </Button>
+          <Button 
+            size="sm" 
+            variant={deleteMode ? "default" : "outline"}
+            onClick={toggleDeleteMode}
+            className="flex items-center gap-1"
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleteMode ? '退出删除' : '删除文件'}
           </Button>
           <Button 
             size="sm" 
@@ -526,17 +536,6 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           >
             <RefreshCw className="h-4 w-4" />
             刷新
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={onOpenFolder}
-            title="在文件浏览器中打开文件夹"
-            className="flex items-center gap-1"
-            disabled={!currentFolder}
-          >
-            <FolderOpen className="h-4 w-4" />
-            打开文件夹
           </Button>
           <Button
             size="sm" 
@@ -570,17 +569,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
               </Button>
             )}
           </Button>
+          {/* 当前文件夹显示 */}
+          <CurrentFolderDisplay profileId={profileId} onFolderClick={onOpenFolder} />
         </div>
         <div className="flex items-center gap-x-2">
-          <Button 
-            size="sm" 
-            variant={deleteMode ? "default" : "outline"}
-            onClick={toggleDeleteMode}
-            className="flex items-center gap-1"
-          >
-            <Trash2 className="h-4 w-4" />
-{deleteMode ? '退出删除' : '删除文件'}
-          </Button>
           {deleteMode && (
             <Button 
               size="sm" 
@@ -691,7 +683,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         </span>
       </div>
       
-      <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
+      <ScrollArea className="h-[calc(100%-6.5rem)] w-full rounded-b border border-t-0">
         <div className="flex w-full flex-col divide-y">
           {sortedFiles.map((file, displayIndex) => {
             fileItemRefs.current.set(file, createRef<FileItemHandle>());
