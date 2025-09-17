@@ -9,10 +9,12 @@ import {
   IconTrash, 
   IconArrowUp, 
   IconArrowDown,
-  IconPlus
+  IconPlus,
+  IconAlertCircle
 } from '@tabler/icons-react';
 import type { Rule, RuleMapInfo, ListConfig, RULE_MAP_TYPE } from '@/lib/rules';
 import { saveGlobalMapLists } from '@/lib/rules';
+import { toast } from 'sonner';
 
 export interface RuleMapSecondaryEditDialogProps {
   open: boolean;
@@ -39,6 +41,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   const [previewItems, setPreviewItems] = useState<string[]>([]);
   const [isRenamingForTemplate, setIsRenamingForTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [duplicateItems, setDuplicateItems] = useState<string[]>([]);
 
   // 初始化数据
   useEffect(() => {
@@ -52,14 +55,47 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
     }
   }, [open, rule]);
 
-  // 文本内容变化时更新预览
+  // 文本内容变化时更新预览和检查重复项
   useEffect(() => {
     const lines = textContent
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0);
     setPreviewItems(lines);
+    
+    // 检查重复项
+    const duplicates = findDuplicateItems(lines);
+    setDuplicateItems(duplicates);
   }, [textContent]);
+
+  /**
+   * 检查重复项
+   */
+  const findDuplicateItems = (items: string[]): string[] => {
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    
+    for (const item of items) {
+      if (seen.has(item)) {
+        duplicates.add(item);
+      } else {
+        seen.add(item);
+      }
+    }
+    
+    return Array.from(duplicates);
+  };
+
+  /**
+   * 校验是否存在重复项
+   */
+  const validateNoDuplicates = (): boolean => {
+    if (duplicateItems.length > 0) {
+      toast.error(`存在重复的文件名: ${duplicateItems.join(', ')}`);
+      return false;
+    }
+    return true;
+  };
 
   const activeList = rule?.info.lists[rule.info.activeListIndex] || { name: '', targetNames: [] };
 
@@ -118,6 +154,11 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
    * 只更新当前规则实例，不影响全局模板
    */
   const handleSaveInstance = async () => {
+    // 先校验重复项
+    if (!validateNoDuplicates()) {
+      return;
+    }
+    
     try {
       // 深度克隆规则实例的lists，确保与全局模板完全隔离
       const clonedRuleLists = rule.info.lists.map(list => ({
@@ -168,6 +209,11 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
    * 更新当前规则实例并在全局列表映射规则下覆盖所使用的列表模板
    */
   const handleOverwrite = async () => {
+    // 先校验重复项
+    if (!validateNoDuplicates()) {
+      return;
+    }
+    
     try {
       const updatedRuleInfo = createUpdatedRuleInfo();
       const updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
@@ -230,6 +276,11 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
    */
   const handleConfirmSaveAsNewTemplate = async () => {
     if (!newTemplateName.trim()) return;
+    
+    // 先校验重复项
+    if (!validateNoDuplicates()) {
+      return;
+    }
     
     try {
       // 1. 获取当前的全局模板配置
@@ -392,8 +443,18 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                 }}
               />
             </div>
-            <div className="mt-2 text-sm text-muted-foreground">
-              共 {previewItems.length} 个文件名
+            <div className="mt-2 flex flex-col gap-1">
+              <div className="text-sm text-muted-foreground">
+                共 {previewItems.length} 个文件名
+              </div>
+              {duplicateItems.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  <IconAlertCircle className="h-4 w-4 shrink-0" />
+                  <span>
+                    存在重复文件名: {duplicateItems.join(', ')}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -410,14 +471,21 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                   </div>
                 ) : (
                   <div className="divide-y">
-                    {previewItems.map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 p-2 hover:bg-accent/50 group"
-                      >
-                        <span className="flex-1 text-sm font-mono">
-                          {index + 1}. {item}
-                        </span>
+                    {previewItems.map((item, index) => {
+                      const isDuplicate = duplicateItems.includes(item);
+                      return (
+                        <div
+                          key={index}
+                          className={`flex items-center gap-2 p-2 hover:bg-accent/50 group ${
+                            isDuplicate ? 'bg-red-50 border-l-2 border-red-500' : ''
+                          }`}
+                        >
+                          <span className={`flex-1 text-sm font-mono ${
+                            isDuplicate ? 'text-red-600 font-medium' : ''
+                          }`}>
+                            {isDuplicate && <IconAlertCircle className="inline h-3 w-3 mr-1" />}
+                            {index + 1}. {item}
+                          </span>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button
                             size="sm"
@@ -450,7 +518,8 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                           </Button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -485,7 +554,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
               </Button>
               <Button 
                 onClick={handleConfirmSaveAsNewTemplate}
-                disabled={!newTemplateName.trim()}
+                disabled={!newTemplateName.trim() || duplicateItems.length > 0}
               >
                 <IconCheck className="h-4 w-4 mr-2" />
                 确认保存
@@ -505,14 +574,25 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                 <IconX className="h-4 w-4 mr-2" />
                 取消
               </Button>
-              <Button variant="outline" onClick={handleOverwrite}>
+              <Button 
+                variant="outline" 
+                onClick={handleOverwrite}
+                disabled={duplicateItems.length > 0}
+              >
                 覆盖模板
               </Button>
-              <Button variant="outline" onClick={handleStartSaveAsNewTemplate}>
+              <Button 
+                variant="outline" 
+                onClick={handleStartSaveAsNewTemplate}
+                disabled={duplicateItems.length > 0}
+              >
                 <IconPlus className="h-4 w-4 mr-2" />
                 新建模板
               </Button>
-              <Button onClick={handleSaveInstance}>
+              <Button 
+                onClick={handleSaveInstance}
+                disabled={duplicateItems.length > 0}
+              >
                 保存规则实例
               </Button>
             </div>
