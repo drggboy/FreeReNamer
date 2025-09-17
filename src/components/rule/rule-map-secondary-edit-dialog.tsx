@@ -280,20 +280,38 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       
       console.log('全局模板配置已更新');
       
-      // 6. 更新规则实例，但使用更新后的全局模板
-      const finalUpdatedRuleInfo: RuleMapInfo = {
-        lists: updatedGlobalTemplates,  // 使用包含新模板的全局模板列表
+      // 6. 全局模板已更新（无需创建 finalUpdatedRule，因为我们只需要保存规则实例）
+
+      // 7. 创建保存规则实例的数据（与"保存规则实例"按钮效果一致）
+      // 创建一个只包含当前修改的规则实例副本，不影响全局模板
+      const clonedRuleLists = rule.info.lists.map(list => ({
+        name: list.name,
+        targetNames: [...list.targetNames]  // 深度克隆targetNames数组
+      }));
+      
+      // 只修改当前活动列表的内容
+      clonedRuleLists[rule.info.activeListIndex] = {
+        ...activeList,
+        targetNames: [...previewItems]  // 使用新的数组，不共享引用
+      };
+      
+      const instanceOnlyRuleInfo: RuleMapInfo = {
+        lists: clonedRuleLists,
         activeListIndex: rule.info.activeListIndex,
         includeExt
       };
       
-      const finalUpdatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
+      const instanceOnlyRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
         ...rule,
-        info: finalUpdatedRuleInfo
+        info: instanceOnlyRuleInfo
       };
 
-      // 7. 触发当前规则实例更新回调
-      onOverwriteRule(finalUpdatedRule);
+      // 8. 先保存规则实例（与"保存规则实例"按钮效果一致）
+      if (onSaveInstanceOnly) {
+        onSaveInstanceOnly(instanceOnlyRule);
+      }
+      
+      // 注意：不再调用 onOverwriteRule，因为用户期望的是保存规则实例而不是覆盖为全局模板
       
       setIsRenamingForTemplate(false);
       setNewTemplateName('');
