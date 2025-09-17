@@ -89,3 +89,35 @@
   .disable-context-menu [data-radix-context-menu-trigger] * {
     -webkit-user-select: text;
   }
+
+  /* 修复Tauri环境下的双滚动条问题 */
+  /* 隐藏webkit默认滚动条，只保留Radix UI的自定义滚动条 */
+  [data-radix-scroll-area-viewport] {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+  
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+  
+  /* 确保Radix UI滚动条在Tauri环境中正确显示 */
+  [data-radix-scroll-area-scrollbar] {
+    z-index: 1;
+  }
+
+  /* 针对Tauri环境的额外修复 */
+  @media (min-resolution: 1dppx) {
+    /* 在高DPI环境下进一步确保滚动条正确显示 */
+    [data-radix-scroll-area-viewport] {
+      overflow: auto !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    
+    [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+      width: 0 !important;
+      height: 0 !important;
+      display: none !important;
+    }
+  }
