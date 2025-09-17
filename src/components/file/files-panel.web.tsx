@@ -23,7 +23,7 @@ import { uniqBy } from 'lodash-es';
 import { ChevronDown, ChevronUp, Settings, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
-import { calculateFilenameWidth, shouldAdjustFilenameWidth } from '@/lib/filename-width-calculator';
+import { calculateFilenameWidth, shouldAdjustFilenameWidth, calculateSmartColumnWidths } from '@/lib/filename-width-calculator';
 import { CurrentFolderDisplay } from '@/components/global/current-folder-display';
 
 // 访问FileItem组件中的缩略图缓存对象
@@ -254,17 +254,101 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     }, 100);
   }, [currentWidths, setColumnWidths]);
 
-  // 重置列宽到默认值并重新进行自适应调整
-  const resetColumnWidths = useCallback(() => {
-    // 首先重置到默认值
-    const defaultWidths = { ...DEFAULT_COLUMN_WIDTHS };
-    setCurrentWidths(defaultWidths);
-    setColumnWidths(defaultWidths);
+  // 智能重置列宽：基于文件列表中的最长值计算最佳列宽
+  const resetColumnWidths = useCallback(async () => {
+    console.log('🔧 重置列宽按钮被点击');
+    console.log('当前文件数量:', files.length);
+    console.log('文件列表前3个:', files.slice(0, 3));
     
-    // 重置初始调整标记，触发自适应调整
-    hasInitialAdjusted.current = false;
-    console.log('重置列宽并触发自适应调整');
-  }, [setColumnWidths]);
+    const containerWidth = getContainerWidth();
+    console.log('容器宽度:', containerWidth);
+    
+    if (containerWidth <= 0 || files.length === 0) {
+      // 如果没有文件或容器宽度无效，回退到默认值
+      const defaultWidths = { ...DEFAULT_COLUMN_WIDTHS };
+      setCurrentWidths(defaultWidths);
+      setColumnWidths(defaultWidths);
+      console.log('❌ 重置列宽到默认值（无文件或容器宽度无效）');
+      console.log('默认列宽:', defaultWidths);
+      return;
+    }
+
+    console.log('📏 开始计算智能列宽...');
+    
+    // 获取显示的文件名（基础名称）而不是完整路径
+    try {
+      const displayNames: string[] = [];
+      
+      // Web环境下，文件通常是FileSystemFileHandle，获取其name属性
+      for (const file of files.slice(0, 20)) { // 限制处理数量以提高性能
+        if (typeof file === 'string') {
+          // 如果是字符串，取路径的最后一部分
+          const baseName = file.split(/[/\\]/).pop() || file;
+          displayNames.push(baseName);
+        } else {
+          // 如果是FileSystemFileHandle，直接使用name属性
+          displayNames.push(file.name);
+        }
+      }
+      
+      console.log('📁 实际显示的文件名:', displayNames.slice(0, 3));
+      
+      // 使用智能计算函数，基于实际显示的文件名计算最佳列宽
+      const smartWidths = calculateSmartColumnWidths(
+        displayNames,
+        [], // 暂时不传入时间信息，因为需要异步获取
+        containerWidth,
+        {
+          fontSize: 14,
+          extraPadding: 40, // 增加padding确保有足够空间
+          minWidthPercents: {
+            filename: 18,
+            time: 12,
+            manual: 15
+          },
+          maxWidthPercents: {
+            filename: 55,
+            time: 22,
+            manual: 30
+          }
+        }
+      );
+      
+      console.log('📐 计算出的智能列宽:', smartWidths);
+      console.log('原列宽:', currentWidths);
+      
+      setCurrentWidths(smartWidths);
+      setColumnWidths(smartWidths);
+      console.log('✅ 智能重置列宽完成，基于实际显示文件名计算');
+    } catch (error) {
+      console.error('❌ 智能列宽计算失败，回退到简单处理:', error);
+      
+      // 回退方案：使用文件名的最后一部分
+      const displayNames = files.map(file => {
+        if (typeof file === 'string') {
+          return file.split(/[/\\]/).pop() || file;
+        } else {
+          return file.name;
+        }
+      });
+      
+      const smartWidths = calculateSmartColumnWidths(
+        displayNames,
+        [],
+        containerWidth,
+        {
+          fontSize: 14,
+          extraPadding: 40,
+          minWidthPercents: { filename: 18, time: 12, manual: 15 },
+          maxWidthPercents: { filename: 55, time: 22, manual: 30 }
+        }
+      );
+      
+      setCurrentWidths(smartWidths);
+      setColumnWidths(smartWidths);
+      console.log('✅ 智能重置列宽完成（回退方案）');
+    }
+  }, [files, getContainerWidth, setColumnWidths, currentWidths]);
 
   // 切换删除模式
   const toggleDeleteMode = useCallback(() => {
@@ -481,7 +565,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             size="sm" 
             variant="outline"
             onClick={resetColumnWidths}
-            title="重置列宽"
+            title="智能重置列宽：基于当前文件列表的最长值自动计算最佳列宽"
           >
             重置列宽
           </Button>

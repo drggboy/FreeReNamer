@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, getProfileFilesAtom, getProfileFileSortConfigAtom, getProfileSelectedFilesAtom, getProfileCurrentFolderAtom, isExecutingAtom, type UndoOperation } from '@/lib/atoms';
+import { atomStore, filesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, getProfileFilesAtom, getProfileFileSortConfigAtom, getProfileSelectedFilesAtom, getProfileCurrentFolderAtom, getProfileSelectedThumbnailAtom, selectedFilesAtom, selectedThumbnailAtom, isExecutingAtom, type UndoOperation } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { getSortedFileIndices } from '@/lib/queries/file';
@@ -333,9 +333,94 @@ function Component() {
         }
       }
     },
-    onSuccess: () => {
+    onSuccess: async (_, profileId) => {
       // 重置执行状态
       atomStore.set(isExecutingAtom, false);
+      
+      // 自动刷新文件列表
+      try {
+        if (__PLATFORM__ === __PLATFORM_TAURI__) {
+          // Tauri环境：重新扫描当前文件夹
+          const currentFolder = atomStore.get(getProfileCurrentFolderAtom(profileId));
+          if (currentFolder) {
+            console.log('🔄 [执行完成] 自动刷新文件列表');
+            
+            // 清理React Query缓存，确保文件信息重新查询
+            queryClient.removeQueries({ 
+              queryKey: [QueryType.FileItemInfo],
+              exact: false 
+            });
+            
+            // 清理缩略图缓存（文件重命名后需要重新生成）
+            const cache = window.__THUMBNAIL_CACHE__;
+            if (cache) {
+              cache.clear();
+              console.log('🧹 [执行完成] 清理了缓存的缩略图');
+            }
+            
+            // 重新扫描文件夹
+            const { invoke } = await import('@tauri-apps/api');
+            const files = await invoke<string[]>('read_dir', { path: currentFolder });
+            
+            // 更新文件列表
+            atomStore.set(getProfileFilesAtom(profileId), files);
+            
+            // 清空选中状态（因为文件名可能已改变）
+            atomStore.set(getProfileSelectedFilesAtom(profileId), []);
+            atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
+            
+            console.log(`✅ [执行完成] 文件列表已自动刷新，共 ${files.length} 个文件`);
+          }
+        } else {
+          // Web环境：刷新当前文件夹
+          const currentFolder = atomStore.get(currentFolderAtom);
+          if (currentFolder && typeof currentFolder !== 'string') {
+            console.log('🔄 [执行完成] 自动刷新文件列表');
+            
+            // 清理缩略图缓存（文件重命名后需要重新生成）
+            const cache = window.__THUMBNAIL_CACHE__;
+            if (cache) {
+              // 释放所有blob URL
+              for (const url of cache.values()) {
+                if (url && url.startsWith('blob:')) {
+                  URL.revokeObjectURL(url);
+                }
+              }
+              cache.clear();
+              console.log('🧹 [执行完成] 清理了缓存的缩略图');
+            }
+            
+            // 获取文件夹中的所有文件
+            const getAllFiles = async (directoryHandle: FileSystemDirectoryHandle) => {
+              const fileHandles: FileSystemFileHandle[] = [];
+              for await (const [name, handle] of directoryHandle.entries()) {
+                if (handle.kind === 'file') {
+                  fileHandles.push(handle);
+                }
+              }
+              return fileHandles;
+            };
+            
+            const files = await getAllFiles(currentFolder);
+            
+            // 更新文件列表
+            atomStore.set(filesAtom, files);
+            
+            // 清空选中状态
+            atomStore.set(selectedFilesAtom, []);
+            atomStore.set(selectedThumbnailAtom, null);
+            
+            console.log(`✅ [执行完成] 文件列表已自动刷新，共 ${files.length} 个文件`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [执行完成] 自动刷新文件列表失败:', error);
+        // 刷新失败时，至少清理缓存让用户手动刷新时能看到最新数据
+        queryClient.removeQueries({ 
+          queryKey: [QueryType.FileItemInfo],
+          exact: false 
+        });
+      }
     },
     onError: (error) => {
       // 重置执行状态

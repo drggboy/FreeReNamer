@@ -11,8 +11,10 @@ const RootComponent = () => {
     // @ts-ignore
     const isTauri = typeof window !== 'undefined' && window.__TAURI_IPC__;
     
-    // 临时：在开发环境也启用，便于测试
-    if ((isProduction || !isProduction) && isTauri) {
+    console.log('环境检测:', { isProduction, isTauri, willDisableContextMenu: isProduction && isTauri });
+    
+    // 只在生产环境且为Tauri环境时禁用右键菜单
+    if (isProduction && isTauri) {
       // 添加CSS类来禁用右键菜单样式
       document.body.classList.add('disable-context-menu');
       

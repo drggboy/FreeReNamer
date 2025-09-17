@@ -3,6 +3,8 @@
  * 用于根据文件列表中最长的文件名计算合适的列宽
  */
 
+import type { ColumnWidths } from './atoms';
+
 /**
  * 计算文本宽度的工具函数
  * @param text 要计算宽度的文本
@@ -159,4 +161,155 @@ export function calculateBatchFilenameWidth(
   const allFiles = fileLists.flat();
   
   return calculateFilenameWidth(allFiles, containerWidth, options);
+}
+
+/**
+ * 获取时间字符串的最长值
+ * @param files 文件信息列表
+ * @returns 最长的时间字符串
+ */
+function getLongestTimeString(files: Array<{ timeString?: string }>): string {
+  let longestTime = '';
+  let maxLength = 0;
+  
+  for (const file of files) {
+    const timeStr = file.timeString || '';
+    if (timeStr.length > maxLength) {
+      maxLength = timeStr.length;
+      longestTime = timeStr;
+    }
+  }
+  
+  return longestTime || '2024-01-01 12:00:00'; // 默认时间格式
+}
+
+/**
+ * 计算智能列宽配置
+ * @param files 文件列表（文件名）
+ * @param fileInfos 文件信息列表（包含时间等）
+ * @param containerWidth 容器宽度
+ * @param options 配置选项
+ * @returns 智能计算的列宽配置
+ */
+export interface SmartColumnWidthOptions {
+  /** 字体大小（像素） */
+  fontSize?: number;
+  /** 字体族 */
+  fontFamily?: string;
+  /** 额外的padding（像素） */
+  extraPadding?: number;
+  /** 固定列宽（rem） */
+  fixedColumnWidths?: {
+    checkbox?: number;
+    index?: number;
+    thumbnail?: number;
+  };
+  /** 最小宽度限制（百分比） */
+  minWidthPercents?: {
+    filename?: number;
+    time?: number;
+    manual?: number;
+  };
+  /** 最大宽度限制（百分比） */
+  maxWidthPercents?: {
+    filename?: number;
+    time?: number;
+    manual?: number;
+  };
+}
+
+export function calculateSmartColumnWidths(
+  files: Array<string | { name: string }>,
+  fileInfos: Array<{ timeString?: string }> = [],
+  containerWidth: number,
+  options: SmartColumnWidthOptions = {}
+): ColumnWidths {
+  console.log('🧮 calculateSmartColumnWidths 被调用');
+  console.log('传入参数:', { 
+    filesCount: files.length, 
+    fileInfosCount: fileInfos.length, 
+    containerWidth,
+    options 
+  });
+  
+  const {
+    fontSize = 14,
+    fontFamily = 'system-ui, -apple-system, sans-serif',
+    extraPadding = 32, // 增加padding以确保有足够空间
+    fixedColumnWidths = {
+      checkbox: 3,
+      index: 5,
+      thumbnail: 15
+    },
+    minWidthPercents = {
+      filename: 20,
+      time: 12,
+      manual: 15
+    },
+    maxWidthPercents = {
+      filename: 50,
+      time: 25,
+      manual: 30
+    }
+  } = options;
+
+  // 如果没有文件，返回默认配置
+  if (files.length === 0) {
+    return {
+      checkbox: fixedColumnWidths.checkbox || 3,
+      index: fixedColumnWidths.index || 5,
+      filename: minWidthPercents.filename || 20,
+      time: minWidthPercents.time || 12,
+      thumbnail: fixedColumnWidths.thumbnail || 15,
+      preview: 1,
+      manual: minWidthPercents.manual || 15
+    };
+  }
+
+  // 计算文件名列宽度
+  const longestFilename = getLongestFilename(files);
+  const filenameTextWidth = getTextWidth(longestFilename, fontSize, fontFamily);
+  const filenameRequiredPercent = ((filenameTextWidth + extraPadding) / containerWidth) * 100;
+  const filenameWidth = Math.max(
+    minWidthPercents.filename || 20,
+    Math.min(maxWidthPercents.filename || 50, filenameRequiredPercent)
+  );
+
+  // 计算时间列宽度
+  // 如果没有提供文件信息，使用典型的时间格式估算
+  const longestTimeString = fileInfos.length > 0 
+    ? getLongestTimeString(fileInfos)
+    : '2024-12-31 23:59:59'; // 使用最长可能的时间格式
+  const timeTextWidth = getTextWidth(longestTimeString, fontSize, fontFamily);
+  const timeRequiredPercent = ((timeTextWidth + extraPadding) / containerWidth) * 100;
+  const timeWidth = Math.max(
+    minWidthPercents.time || 12,
+    Math.min(maxWidthPercents.time || 25, timeRequiredPercent)
+  );
+
+  // 计算手动修改列宽度（通常显示文件名或预览名，所以基于文件名计算但稍微小一些）
+  const manualRequiredPercent = filenameRequiredPercent * 0.8; // 手动列通常比文件名稍短
+  const manualWidth = Math.max(
+    minWidthPercents.manual || 15,
+    Math.min(maxWidthPercents.manual || 30, manualRequiredPercent)
+  );
+
+  console.log('智能列宽计算结果:', {
+    longestFilename,
+    longestTimeString,
+    filenameWidth: Math.round(filenameWidth * 100) / 100,
+    timeWidth: Math.round(timeWidth * 100) / 100,
+    manualWidth: Math.round(manualWidth * 100) / 100,
+    containerWidth
+  });
+
+  return {
+    checkbox: fixedColumnWidths.checkbox || 3,
+    index: fixedColumnWidths.index || 5,
+    filename: Math.round(filenameWidth * 100) / 100,
+    time: Math.round(timeWidth * 100) / 100,
+    thumbnail: fixedColumnWidths.thumbnail || 15,
+    preview: 1, // 自适应
+    manual: Math.round(manualWidth * 100) / 100
+  };
 }

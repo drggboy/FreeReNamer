@@ -41,17 +41,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     isSuccess,
   } = useQuery(fileItemInfoQueryOptions(profileId, file, index, sortConfig));
 
-  // 调试文件信息查询状态
-  useEffect(() => {
-    console.log(`=== FileItem 查询状态 ===`);
-    console.log(`文件: ${file}`);
-    console.log(`isLoading: ${isLoading}`);
-    console.log(`isSuccess: ${isSuccess}`);
-    console.log(`isError: ${isError}`);
-    console.log(`error:`, error);
-    console.log(`fileItemInfo:`, fileItemInfo);
-    console.log(`========================`);
-  }, [file, isLoading, isSuccess, isError, error, fileItemInfo]);
+  // 移除了频繁的调试日志以避免刷屏
 
   // 根据平台选择正确的selectedFiles atom
   const selectedFiles = useAtomValue(__PLATFORM__ === __PLATFORM_TAURI__ ? getProfileSelectedFilesAtom(profileId) : selectedFilesAtom);
@@ -133,7 +123,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
             URL.revokeObjectURL(oldUrl);
           }
           thumbnailCache.delete(oldCacheKey);
-          console.log('清理了旧文件的缩略图缓存:', oldCacheKey);
         }
         
         // 通知父组件状态变化
@@ -142,7 +131,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       } else {
         // Web环境实现重命名
         // 由于Web环境限制，无法直接重命名文件，这里仅作示例
-        console.log('Web环境重命名:', file, manualName);
         toast.info('Web环境不支持文件重命名');
         return false;
       }
@@ -230,72 +218,46 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
   // 获取图片缩略图URL
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
-    console.log(`=== 开始获取缩略图 ===`);
-    console.log(`文件路径: ${file}`);
-    console.log(`文件信息:`, fileItemInfo?.fileInfo);
-    
     if (!fileItemInfo?.fileInfo.isImage) {
-      console.log(`不是图片文件或文件信息未加载: isImage=${fileItemInfo?.fileInfo.isImage}`);
       return null;
     }
     
     // 使用文件路径作为缓存键，更加稳定
     const cacheKey = `${file}`;
     if (thumbnailCache.has(cacheKey)) {
-      console.log('使用缓存的缩略图:', file);
       return thumbnailCache.get(cacheKey) || null;
     }
 
     try {
-      // 检查是否在Tauri环境
-      console.log(`检查Tauri环境: window.__TAURI_IPC__ = ${!!(typeof window !== 'undefined' && window.__TAURI_IPC__)}`);
-      
       // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
       if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
-        console.log(`在Tauri环境下处理图片: ${file}`);
         
         try {
           // 首先检查文件是否存在
-          console.log(`🔍 [Tauri] 开始导入invoke函数`);
           const { invoke } = await import('@tauri-apps/api');
-          console.log(`🔍 [Tauri] invoke函数导入成功`);
-          
-          console.log(`🔍 [Tauri] 检查文件是否存在: ${file}`);
           const fileExists = await invoke<boolean>('exists', { path: file });
-          console.log(`✅ [Tauri] 文件存在检查结果: ${fileExists}`);
           
           if (!fileExists) {
             throw new Error(`文件不存在: ${file}`);
           }
           
           // 直接使用base64方式，避免asset协议问题
-          console.log(`🔍 [Tauri] 开始导入readBinaryFile和getMimeType`);
           const { readBinaryFile } = await import('@tauri-apps/api/fs');
           const { getMimeType } = await import('@/lib/file');
-          console.log(`✅ [Tauri] 函数导入成功`);
           
-          console.log(`🖼️ [Tauri] 开始读取文件二进制内容: ${file}`);
           const fileContent = await readBinaryFile(file);
-          console.log(`📦 [Tauri] 文件内容读取成功，大小: ${fileContent.length} 字节`);
-          
           const mimeType = getMimeType(fileItemInfo.fileInfo.ext);
-          console.log(`🏷️ [Tauri] 文件MIME类型: ${mimeType}`);
           
-          console.log(`🔄 [Tauri] 开始转换为base64...`);
           // 将二进制数据转换为base64字符串
           const base64Content = btoa(
             new Uint8Array(fileContent)
               .reduce((data, byte) => data + String.fromCharCode(byte), '')
           );
-          console.log(`🔄 [Tauri] base64转换完成，长度: ${base64Content.length}`);
           
           const dataUrl = `data:${mimeType};base64,${base64Content}`;
-          console.log(`✅ [Tauri] 生成base64 URL成功，总长度: ${dataUrl.length}`);
-          console.log('🖼️ [Tauri] 图片URL预览:', dataUrl.substring(0, 50) + '...');
           
           // 保存到缓存
           thumbnailCache.set(cacheKey, dataUrl);
-          console.log(`💾 [Tauri] 缓存保存成功`);
           return dataUrl;
         } catch (err) {
           console.error('❌ [Tauri] 读取图片错误:', err);
@@ -306,7 +268,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       }
       // Web环境
       if (typeof file === 'string') {
-        console.log('Web图片URL(字符串):', file);
         // 保存到缓存
         thumbnailCache.set(cacheKey, file);
         return file;
@@ -315,7 +276,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         const fileHandle = file as unknown as FileSystemFileHandle;
         const fileObj = await fileHandle.getFile();
         const url = URL.createObjectURL(fileObj);
-        console.log('Web图片URL(对象):', url);
         // 保存到缓存
         thumbnailCache.set(cacheKey, url);
         return url;
@@ -334,46 +294,34 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   useEffect(() => {
     let mounted = true;
     
-    console.log(`🔍 [缩略图检查] 文件: ${file}`);
-    console.log(`🔍 [缩略图检查] fileItemInfo存在: ${!!fileItemInfo}`);
-    console.log(`🔍 [缩略图检查] fileItemInfo.fileInfo存在: ${!!fileItemInfo?.fileInfo}`);
-    console.log(`🔍 [缩略图检查] isImage: ${fileItemInfo?.fileInfo?.isImage}`);
     
     if (fileItemInfo?.fileInfo.isImage) {
-      console.log(`✅ [缩略图] 确认为图片文件: ${file}`);
-      
       // 检查缓存中是否已有此文件的缩略图
       const cacheKey = `${file}`;
       const cachedUrl = thumbnailCache.get(cacheKey);
-      console.log(`🔍 [缩略图缓存] 缓存键: ${cacheKey}, 缓存存在: ${!!cachedUrl}`);
       
       if (cachedUrl) {
         // 如果缓存中有，直接使用
-        console.log(`✅ [缩略图缓存] 使用缓存: ${file}`);
         setThumbnailUrl(cachedUrl);
         setThumbnailLoading(false);
         setThumbnailError(false);
       } else {
         // 否则加载新的缩略图
-        console.log(`🔄 [缩略图加载] 开始加载: ${file}`);
         setThumbnailLoading(true);
         setThumbnailError(false);
         
         getThumbnailUrl()
           .then(url => {
-            console.log(`🔄 [缩略图加载] getThumbnailUrl返回: ${url ? '有URL' : '无URL'}, mounted: ${mounted}`);
             if (mounted && url) {
-              console.log(`✅ [缩略图加载] 成功: ${file}`);
               setThumbnailUrl(url);
             } else {
-              console.log(`❌ [缩略图加载] 失败: ${file}, url存在: ${!!url}, mounted: ${mounted}`);
               if (mounted) {
                 setThumbnailError(true);
               }
             }
           })
           .catch(err => {
-            console.error(`❌ [缩略图加载] 错误 ${file}:`, err);
+            console.error(`缩略图加载错误 ${file}:`, err);
             if (mounted) {
               setThumbnailError(true);
             }
@@ -385,7 +333,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           });
       }
     } else {
-      console.log(`❌ [缩略图] 非图片文件或信息未加载: ${file}, isImage: ${fileItemInfo?.fileInfo?.isImage}`);
       setThumbnailUrl(null);
       setThumbnailError(false);
       setThumbnailLoading(false);
@@ -408,13 +355,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         // 检查是否在Tauri环境
         // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
         if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
-          console.log('Tauri打开文件:', file);
           const { invoke } = await import('@tauri-apps/api');
           
           // 如果设置了自定义图片查看器，优先使用
           if (imageViewerApp) {
             try {
-              console.log('使用自定义应用打开:', imageViewerApp, file);
               await invoke('open_with_custom_app', { 
                 appPath: imageViewerApp,
                 filePath: file
@@ -439,14 +384,12 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           // Web环境处理方式
           if (typeof file === 'string') {
             // 如果是URL或本地路径，尝试在新标签页打开
-            console.log('Web打开文件(字符串):', file);
             const newWindow = window.open(URL.createObjectURL(new Blob([''], { type: 'text/html' })), '_blank');
             if (newWindow) {
               newWindow.location.href = file;
             }
           } else {
             // 如果是FileSystemFileHandle，创建一个临时的object URL
-            console.log('Web打开文件(对象)');
             const fileHandle = file as unknown as FileSystemFileHandle;
             const fileObj = await fileHandle.getFile();
             const url = URL.createObjectURL(fileObj);

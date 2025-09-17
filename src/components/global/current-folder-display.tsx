@@ -34,9 +34,6 @@ export function CurrentFolderDisplay({
   
   // 获取文件夹存在状态（仅在Tauri环境下使用）
   const folderExists = profileId ? useAtomValue(getProfileFolderExistsAtom(profileId)) : undefined;
-  
-  // 调试日志
-  console.log(`🔍 [CurrentFolderDisplay] profileId: ${profileId}, currentFolder: ${currentFolder}, folderExists: ${folderExists}`);
 
   // 如果没有选中文件夹，显示提示信息
   if (!currentFolder) {
