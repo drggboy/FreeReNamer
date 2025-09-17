@@ -9,16 +9,143 @@ import {
   IconArrowDown, 
   IconCheck, 
   IconX,
-  IconAlertCircle
+  IconAlertCircle,
+  IconGripVertical
 } from '@tabler/icons-react';
 import type { ListConfig } from '@/lib/rules';
 import { toast } from 'sonner';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 export interface ListEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   listConfig: ListConfig;
   onSave: (updatedConfig: ListConfig) => void;
+}
+
+interface SortableItemProps {
+  id: string;
+  item: string;
+  index: number;
+  isDuplicate: boolean;
+  hasAnyDuplicates: boolean;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onDelete: (index: number) => void;
+  totalItems: number;
+}
+
+function SortableItem({ 
+  id, 
+  item, 
+  index, 
+  isDuplicate, 
+  hasAnyDuplicates,
+  onMoveUp, 
+  onMoveDown, 
+  onDelete, 
+  totalItems 
+}: SortableItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id,
+    disabled: hasAnyDuplicates // 当列表存在任何重复项时禁用拖拽
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 hover:bg-accent/50 group border-b ${
+        isDuplicate ? 'bg-red-50 border-l-2 border-red-500' : ''
+      } ${isDragging ? 'z-50 shadow-lg' : ''}`}
+    >
+      {/* 拖拽手柄 */}
+      <div
+        {...(hasAnyDuplicates ? {} : attributes)}
+        {...(hasAnyDuplicates ? {} : listeners)}
+        className={`flex items-center justify-center w-6 h-6 transition-opacity ${
+          hasAnyDuplicates 
+            ? 'text-muted-foreground/30 cursor-not-allowed opacity-50' 
+            : 'text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100'
+        }`}
+        title={hasAnyDuplicates ? "存在重复项，无法拖拽" : "拖拽排序"}
+      >
+        <IconGripVertical className="h-4 w-4" />
+      </div>
+
+      <span className={`flex-1 text-sm font-mono ${
+        isDuplicate ? 'text-red-600 font-medium' : ''
+      }`}>
+        {isDuplicate && <IconAlertCircle className="inline h-3 w-3 mr-1" />}
+        {index + 1}. {item}
+      </span>
+
+      <div className={`flex items-center gap-1 transition-opacity ${
+        hasAnyDuplicates ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+      }`}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onMoveUp(index)}
+          disabled={index === 0}
+          className="h-6 w-6 p-0"
+          title="上移"
+        >
+          <IconArrowUp className="h-3 w-3" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onMoveDown(index)}
+          disabled={index === totalItems - 1}
+          className="h-6 w-6 p-0"
+          title="下移"
+        >
+          <IconArrowDown className="h-3 w-3" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDelete(index)}
+          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+          title="删除"
+        >
+          <IconTrash className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -35,13 +162,17 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
   const [textContent, setTextContent] = useState('');
   const [previewItems, setPreviewItems] = useState<string[]>([]);
   const [duplicateItems, setDuplicateItems] = useState<string[]>([]);
+  const [itemIds, setItemIds] = useState<string[]>([]);
 
   // 初始化数据
   useEffect(() => {
     if (open) {
       setListName(listConfig.name);
-      setTextContent(listConfig.targetNames.join('\n'));
-      setPreviewItems([...listConfig.targetNames]);
+      const items = [...listConfig.targetNames];
+      const ids = items.map((_, index) => `item-${Date.now()}-${index}`);
+      setTextContent(items.join('\n'));
+      setPreviewItems(items);
+      setItemIds(ids);
     }
   }, [open, listConfig]);
 
@@ -51,7 +182,20 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0);
+    
+    // 为新项目生成稳定的ID
+    const newIds = lines.map((line, index) => {
+      // 尝试从现有ID中找到匹配的项目
+      const existingIndex = previewItems.findIndex(item => item === line);
+      if (existingIndex !== -1 && itemIds[existingIndex]) {
+        return itemIds[existingIndex];
+      }
+      // 如果找不到，生成新的ID
+      return `item-${Date.now()}-${index}`;
+    });
+    
     setPreviewItems(lines);
+    setItemIds(newIds);
     
     // 检查重复项
     const duplicates = findDuplicateItems(lines);
@@ -87,12 +231,43 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
     return true;
   };
 
+  // 拖拽传感器配置
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  /**
+   * 处理拖拽结束事件
+   */
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = itemIds.findIndex(id => id === active.id);
+      const newIndex = itemIds.findIndex(id => id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newItems = arrayMove(previewItems, oldIndex, newIndex);
+        const newIds = arrayMove(itemIds, oldIndex, newIndex);
+        
+        setPreviewItems(newItems);
+        setItemIds(newIds);
+        setTextContent(newItems.join('\n'));
+      }
+    }
+  };
+
   /**
    * 从预览区域删除项目
    */
   const handleDeletePreviewItem = (index: number) => {
     const newItems = previewItems.filter((_, i) => i !== index);
+    const newIds = itemIds.filter((_, i) => i !== index);
     setPreviewItems(newItems);
+    setItemIds(newIds);
     setTextContent(newItems.join('\n'));
   };
 
@@ -102,8 +277,11 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
   const handleMoveUpPreviewItem = (index: number) => {
     if (index === 0) return;
     const newItems = [...previewItems];
+    const newIds = [...itemIds];
     [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+    [newIds[index - 1], newIds[index]] = [newIds[index], newIds[index - 1]];
     setPreviewItems(newItems);
+    setItemIds(newIds);
     setTextContent(newItems.join('\n'));
   };
 
@@ -113,8 +291,11 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
   const handleMoveDownPreviewItem = (index: number) => {
     if (index === previewItems.length - 1) return;
     const newItems = [...previewItems];
+    const newIds = [...itemIds];
     [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+    [newIds[index], newIds[index + 1]] = [newIds[index + 1], newIds[index]];
     setPreviewItems(newItems);
+    setItemIds(newIds);
     setTextContent(newItems.join('\n'));
   };
 
@@ -203,7 +384,7 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
           {/* 右侧：效果预览区域 */}
           <div className="flex-1 flex flex-col">
             <label className="block text-sm font-medium mb-2">
-              效果预览
+              效果预览{duplicateItems.length > 0 ? '（存在重复项，拖拽已禁用）' : '（可拖拽排序）'}
             </label>
             <div className="flex-1 border rounded-md overflow-hidden">
               <div className="h-full overflow-y-auto">
@@ -212,57 +393,37 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
                     暂无内容
                   </div>
                 ) : (
-                  <div className="divide-y">
-                    {previewItems.map((item, index) => {
-                      const isDuplicate = duplicateItems.includes(item);
-                      return (
-                        <div
-                          key={index}
-                          className={`flex items-center gap-2 p-2 hover:bg-accent/50 group ${
-                            isDuplicate ? 'bg-red-50 border-l-2 border-red-500' : ''
-                          }`}
-                        >
-                          <span className={`flex-1 text-sm font-mono ${
-                            isDuplicate ? 'text-red-600 font-medium' : ''
-                          }`}>
-                            {isDuplicate && <IconAlertCircle className="inline h-3 w-3 mr-1" />}
-                            {index + 1}. {item}
-                          </span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleMoveUpPreviewItem(index)}
-                            disabled={index === 0}
-                            className="h-6 w-6 p-0"
-                            title="上移"
-                          >
-                            <IconArrowUp className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleMoveDownPreviewItem(index)}
-                            disabled={index === previewItems.length - 1}
-                            className="h-6 w-6 p-0"
-                            title="下移"
-                          >
-                            <IconArrowDown className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeletePreviewItem(index)}
-                            className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                            title="删除"
-                          >
-                            <IconTrash className="h-3 w-3" />
-                          </Button>
-                        </div>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext 
+                      items={itemIds}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div>
+                        {previewItems.map((item, index) => {
+                          const isDuplicate = duplicateItems.includes(item);
+                          const itemId = itemIds[index];
+                          return (
+                            <SortableItem
+                              key={itemId}
+                              id={itemId}
+                              item={item}
+                              index={index}
+                              isDuplicate={isDuplicate}
+                              hasAnyDuplicates={duplicateItems.length > 0}
+                              onMoveUp={handleMoveUpPreviewItem}
+                              onMoveDown={handleMoveDownPreviewItem}
+                              onDelete={handleDeletePreviewItem}
+                              totalItems={previewItems.length}
+                            />
+                          );
+                        })}
                       </div>
-                      );
-                    })}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
               </div>
             </div>
