@@ -25,6 +25,7 @@ interface FileSystemFileHandle {
 
 interface FileSystemDirectoryHandle {
   values(): AsyncIterable<FileSystemDirectoryHandle | FileSystemFileHandle>;
+  entries(): AsyncIterable<[string, FileSystemDirectoryHandle | FileSystemFileHandle]>;
 }
 
 interface DataTransferItem {

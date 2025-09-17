@@ -37,8 +37,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     data: fileItemInfo,
     error,
     isError,
-    isLoading,
-    isSuccess,
   } = useQuery(fileItemInfoQueryOptions(profileId, file, index, sortConfig));
 
   // 移除了频繁的调试日志以避免刷屏

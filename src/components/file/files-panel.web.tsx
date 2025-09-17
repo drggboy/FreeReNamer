@@ -279,16 +279,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     try {
       const displayNames: string[] = [];
       
-      // Web环境下，文件通常是FileSystemFileHandle，获取其name属性
+      // Web环境下，文件是FileSystemFileHandle，获取其name属性
       for (const file of files.slice(0, 20)) { // 限制处理数量以提高性能
-        if (typeof file === 'string') {
-          // 如果是字符串，取路径的最后一部分
-          const baseName = file.split(/[/\\]/).pop() || file;
-          displayNames.push(baseName);
-        } else {
-          // 如果是FileSystemFileHandle，直接使用name属性
-          displayNames.push(file.name);
-        }
+        // Web环境下文件都是FileSystemFileHandle类型
+        displayNames.push(file.name);
       }
       
       console.log('📁 实际显示的文件名:', displayNames.slice(0, 3));
@@ -323,14 +317,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     } catch (error) {
       console.error('❌ 智能列宽计算失败，回退到简单处理:', error);
       
-      // 回退方案：使用文件名的最后一部分
-      const displayNames = files.map(file => {
-        if (typeof file === 'string') {
-          return file.split(/[/\\]/).pop() || file;
-        } else {
-          return file.name;
-        }
-      });
+      // 回退方案：使用文件名
+      const displayNames = files.map(file => file.name);
       
       const smartWidths = calculateSmartColumnWidths(
         displayNames,

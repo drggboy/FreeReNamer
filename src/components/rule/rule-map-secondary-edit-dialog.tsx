@@ -35,6 +35,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export interface RuleMapSecondaryEditDialogProps {
   open: boolean;
@@ -645,7 +646,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
               效果预览{duplicateItems.length > 0 ? '（存在重复项，拖拽已禁用）' : '（可拖拽排序）'}
             </label>
             <div className="flex-1 border rounded-md overflow-hidden">
-              <div className="h-full overflow-y-auto">
+              <ScrollArea className="h-full w-full">
                 {previewItems.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     暂无内容
@@ -683,7 +684,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
                     </SortableContext>
                   </DndContext>
                 )}
-              </div>
+              </ScrollArea>
             </div>
           </div>
         </div>
