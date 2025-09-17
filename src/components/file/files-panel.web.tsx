@@ -8,6 +8,7 @@ import {
   currentFolderAtom,
   selectedThumbnailAtom,
   deleteModeAtom,
+  isExecutingAtom,
   type FilesAtomWeb,
   type FileSortType,
   type ColumnWidths,
@@ -19,7 +20,7 @@ import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
 import { uniqBy } from 'lodash-es';
-import { ChevronDown, ChevronUp, Settings, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 import { calculateFilenameWidth, shouldAdjustFilenameWidth } from '@/lib/filename-width-calculator';
@@ -71,6 +72,7 @@ const PX_TO_REM = 16; // 假设1rem = 16px
 
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const files = useAtomValue(filesAtom as FilesAtomWeb);
+  const isExecuting = useAtomValue(isExecutingAtom);
   const selectedFiles = useAtomValue(selectedFilesAtom);
   const sortConfig = useAtomValue(fileSortConfigAtom);
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
@@ -588,25 +590,38 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         </span>
       </div>
       
-      <ScrollArea className="h-[calc(100%-6.5rem)] w-full rounded-b border border-t-0">
-        <div className="flex w-full flex-col divide-y">
-          {sortedFiles.map((file, displayIndex) => {
-            fileItemRefs.current.set(file, createRef<FileItemHandle>());
-            return (
-              <FileItem
-                key={`${file.name}-${displayIndex}`}
-                file={file.name}
-                profileId={profileId}
-                index={displayIndex}
-                sortConfig={sortConfig}
-                columnWidths={currentWidths}
-                deleteMode={deleteMode}
-                ref={fileItemRefs.current.get(file)}
-              />
-            );
-          })}
-        </div>
-      </ScrollArea>
+      <div className="relative h-[calc(100%-6.5rem)]">
+        <ScrollArea className="h-full w-full rounded-b border border-t-0">
+          <div className="flex w-full flex-col divide-y">
+            {sortedFiles.map((file, displayIndex) => {
+              fileItemRefs.current.set(file, createRef<FileItemHandle>());
+              return (
+                <FileItem
+                  key={`${file.name}-${displayIndex}`}
+                  file={file.name}
+                  profileId={profileId}
+                  index={displayIndex}
+                  sortConfig={sortConfig}
+                  columnWidths={currentWidths}
+                  deleteMode={deleteMode}
+                  ref={fileItemRefs.current.get(file)}
+                />
+              );
+            })}
+          </div>
+        </ScrollArea>
+        
+        {/* 执行中的加载覆盖层 */}
+        {isExecuting && (
+          <div className="absolute inset-0 bg-white/85 backdrop-blur-sm rounded-b flex items-center justify-center z-50">
+            <div className="flex flex-col items-center space-y-3 bg-white px-6 py-4 rounded-lg shadow-lg border border-gray-200">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              <div className="text-base font-semibold text-gray-700">正在执行重命名...</div>
+              <div className="text-xs text-gray-500">请稍候，正在处理文件</div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

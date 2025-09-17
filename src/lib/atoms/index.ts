@@ -102,5 +102,8 @@ export const selectedThumbnailAtom = atom<string | null>(null);
 // 删除模式状态（控制复选框的显示/隐藏）
 export const deleteModeAtom = atom<boolean>(false);
 
+// 执行状态（控制执行动画的显示）
+export const isExecutingAtom = atom<boolean>(false);
+
 // 导出基于配置的状态管理
 export * from './profile-state';

@@ -2,12 +2,13 @@ import { ProfileNavList } from '@/components/profile/profile-nav-list';
 import { createFileRoute, Outlet, useParams, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useSpring, animated } from '@react-spring/web';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { addProfile, getProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
-import { atomStore, filesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, getProfileFilesAtom, getProfileFileSortConfigAtom, getProfileSelectedFilesAtom, getProfileCurrentFolderAtom, type UndoOperation } from '@/lib/atoms';
+import { atomStore, filesAtom, fileSortConfigAtom, undoHistoryAtom, currentFolderAtom, getProfileFilesAtom, getProfileFileSortConfigAtom, getProfileSelectedFilesAtom, getProfileCurrentFolderAtom, isExecutingAtom, type UndoOperation } from '@/lib/atoms';
 import { execRules } from '@/lib/rule';
 import { getFileInfo } from '@/lib/file';
 import { getSortedFileIndices } from '@/lib/queries/file';
@@ -72,8 +73,11 @@ function Component() {
     },
   });
 
-  const { mutate: execProfile } = useMutation({
+  const { mutate: execProfile, isPending: isExecPending } = useMutation({
     mutationFn: async (profileId: string) => {
+      // 设置执行状态为 true
+      atomStore.set(isExecutingAtom, true);
+      
       const profile = await getProfile(profileId);
       // 根据平台获取正确的文件列表
       const files = __PLATFORM__ === __PLATFORM_TAURI__ 
@@ -329,6 +333,15 @@ function Component() {
         }
       }
     },
+    onSuccess: () => {
+      // 重置执行状态
+      atomStore.set(isExecutingAtom, false);
+    },
+    onError: (error) => {
+      // 重置执行状态
+      atomStore.set(isExecutingAtom, false);
+      console.error('执行失败:', error);
+    },
   });
 
   const { mutate: execUndo } = useMutation({
@@ -525,8 +538,15 @@ function Component() {
             <Button size="sm" onClick={handleUndoClick} variant="outline">
               撤销
             </Button>
-            <Button size="sm" onClick={handleExecClick}>
-              执行
+            <Button size="sm" onClick={handleExecClick} disabled={isExecPending}>
+              {isExecPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  执行中...
+                </>
+              ) : (
+                "执行"
+              )}
             </Button>
           </div>
         </div>
