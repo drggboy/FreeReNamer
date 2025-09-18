@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { TextEditor, type TextEditorHandle } from '@/components/ui/text-editor';
 import { 
   IconTrash, 
   IconArrowUp, 
@@ -167,15 +167,16 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
   const [itemIds, setItemIds] = useState<string[]>([]);
   
   // 用于同步滚动的refs
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textEditorRef = useRef<TextEditorHandle>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
 
   /**
-   * 处理textarea滚动，同步更新行号区域的滚动位置
+   * 处理编辑器滚动，同步更新行号区域的滚动位置
    */
-  const handleTextareaScroll = () => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+  const handleEditorScroll = () => {
+    if (textEditorRef.current && lineNumbersRef.current) {
+      const scrollTop = textEditorRef.current.getScrollTop();
+      lineNumbersRef.current.scrollTop = scrollTop;
     }
   };
 
@@ -359,30 +360,34 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
           <div className="flex-1 flex flex-col">
             <label className="block text-sm font-medium mb-2">
               文本编辑（每行一个文件名）
+              <span className="ml-2 text-xs text-muted-foreground font-normal">
+                支持多光标编辑：Ctrl+Shift+鼠标点击
+              </span>
             </label>
-            <div className="flex-1 border rounded-md overflow-hidden flex bg-background">
+            <div className="flex-1 flex bg-background border rounded-md overflow-hidden">
               {/* 行号区域 */}
               <div 
                 ref={lineNumbersRef}
-                className="bg-muted/30 border-r px-3 py-2 text-right text-sm font-mono text-muted-foreground select-none min-w-[3rem] shrink-0 overflow-hidden"
+                className="bg-muted/30 border-r px-3 py-2 text-right text-sm font-mono text-muted-foreground select-none min-w-[3rem] shrink-0 overflow-hidden flex flex-col"
+                style={{ maxHeight: '100%' }}
               >
                 {textContent.split('\n').map((_, index) => (
-                  <div key={index} className="leading-6 h-6">
+                  <div key={index} className="leading-6 h-6 shrink-0">
                     {index + 1}
                   </div>
                 ))}
               </div>
               {/* 文本编辑区域 */}
-              <Textarea
-                ref={textareaRef}
+              <TextEditor
+                ref={textEditorRef}
                 value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-                onScroll={handleTextareaScroll}
+                onChange={setTextContent}
+                onScroll={handleEditorScroll}
                 placeholder="请输入文件名，每行一个"
-                className="flex-1 resize-none font-mono border-none focus-visible:ring-0 leading-6 bg-transparent"
+                className="flex-1 border-none rounded-none"
                 style={{ 
-                  lineHeight: '1.5rem',
-                  padding: '0.5rem'
+                  minHeight: '200px',
+                  height: '100%'
                 }}
               />
             </div>
