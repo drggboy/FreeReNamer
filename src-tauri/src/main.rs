@@ -7,6 +7,8 @@ use std::time::{UNIX_EPOCH, SystemTime};
 use std::process::Command;
 use serde_json;
 use chrono;
+use base64;
+use image::{RgbImage, ImageBuffer, Rgb};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -310,12 +312,20 @@ fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
     ];
     let is_image = !ext_with_dot.is_empty() && image_extensions.contains(&ext_with_dot.to_lowercase().as_str());
     
+    // 判断是否为视频文件
+    let video_extensions = [
+        ".mp4", ".avi", ".mov", ".wmv", ".flv", 
+        ".webm", ".mkv", ".m4v", ".3gp", ".ogv"
+    ];
+    let is_video = !ext_with_dot.is_empty() && video_extensions.contains(&ext_with_dot.to_lowercase().as_str());
+    
     // 构建返回数据
     let mut result = serde_json::json!({
         "name": name,
-        "ext": ext_with_dot, 
+        "ext": ext_with_dot,
         "fullName": full_name,
-        "isImage": is_image
+        "isImage": is_image,
+        "isVideo": is_video
     });
     
     // 添加可选字段
@@ -330,12 +340,158 @@ fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
     Ok(result)
 }
 
+// 生成视频缩略图（基于视频图标的占位符）
+#[tauri::command]
+fn generate_video_thumbnail(
+    path: &str,
+    width: u32,
+    height: u32,
+    _seek_time: f64,
+) -> Result<String, String> {
+    use image::{RgbImage, ImageBuffer, Rgb};
+    
+    // 检查文件是否存在
+    if !std::path::Path::new(path).exists() {
+        return Err(format!("视频文件不存在: {}", path));
+    }
+
+    // 创建一个渐变背景的视频占位符图像
+    let mut img: RgbImage = ImageBuffer::new(width, height);
+    
+    // 创建深蓝到黑色的渐变背景
+    for (_x, y, pixel) in img.enumerate_pixels_mut() {
+        let gradient_factor = (y as f32 / height as f32) * 0.7 + 0.3;
+        let blue_value = (30.0 * gradient_factor) as u8;
+        let green_value = (45.0 * gradient_factor) as u8;
+        let red_value = (25.0 * gradient_factor) as u8;
+        *pixel = Rgb([red_value, green_value, blue_value]);
+    }
+    
+    // 在中心绘制播放图标
+    let center_x = width / 2;
+    let center_y = height / 2;
+    let icon_size = std::cmp::min(width, height) / 4;
+    
+    // 绘制圆形背景
+    let circle_radius = (icon_size as f32 * 1.2) as u32;
+    for y in 0..height {
+        for x in 0..width {
+            let dx = x as i32 - center_x as i32;
+            let dy = y as i32 - center_y as i32;
+            let distance_squared = (dx * dx + dy * dy) as f32;
+            let radius_squared = (circle_radius * circle_radius) as f32;
+            
+            if distance_squared <= radius_squared {
+                // 半透明白色圆形背景
+                let alpha = 1.0 - (distance_squared / radius_squared);
+                let brightness = (alpha * 80.0) as u8;
+                if let Some(pixel) = img.get_pixel_mut_checked(x, y) {
+                    let current = pixel.0;
+                    *pixel = Rgb([
+                        current[0].saturating_add(brightness / 3),
+                        current[1].saturating_add(brightness / 3),
+                        current[2].saturating_add(brightness / 3)
+                    ]);
+                }
+            }
+        }
+    }
+    
+    // 绘制三角形播放图标
+    let triangle_height = icon_size;
+    let triangle_width = (icon_size as f32 * 0.8) as u32;
+    
+    for y in (center_y.saturating_sub(triangle_height/2))..=(center_y + triangle_height/2) {
+        for x in center_x.saturating_sub(triangle_width/3)..=center_x + triangle_width {
+            if x < width && y < height {
+                let dx = x as i32 - center_x as i32 + (triangle_width / 3) as i32;
+                let dy = y as i32 - center_y as i32;
+                
+                // 三角形公式：在三角形内部
+                let max_x_for_y = ((triangle_height as i32 / 2 - dy.abs()) as f32 * 
+                    triangle_width as f32 / triangle_height as f32) as i32;
+                
+                if dx >= 0 && dx <= max_x_for_y && dy.abs() <= triangle_height as i32 / 2 {
+                    if let Some(pixel) = img.get_pixel_mut_checked(x, y) {
+                        *pixel = Rgb([255, 255, 255]); // 白色播放图标
+                    }
+                }
+            }
+        }
+    }
+    
+    // 添加文件格式标识
+    let path_obj = std::path::Path::new(path);
+    if let Some(extension) = path_obj.extension() {
+        let _ext_str = extension.to_string_lossy().to_uppercase();
+        
+        // 在右下角添加格式标识（简单的矩形背景加文字效果）
+        let text_width = std::cmp::min(width / 3, 40);
+        let text_height = std::cmp::min(height / 6, 12);
+        let text_x = width.saturating_sub(text_width + 5);
+        let text_y = height.saturating_sub(text_height + 5);
+        
+        // 绘制半透明背景矩形
+        for y in text_y..=(text_y + text_height) {
+            for x in text_x..=(text_x + text_width) {
+                if x < width && y < height {
+                    if let Some(pixel) = img.get_pixel_mut_checked(x, y) {
+                        *pixel = Rgb([0, 0, 0]); // 黑色背景
+                    }
+                }
+            }
+        }
+        
+        // 简单的白色边框
+        for x in text_x..=(text_x + text_width) {
+            if text_y < height && x < width {
+                if let Some(pixel) = img.get_pixel_mut_checked(x, text_y) {
+                    *pixel = Rgb([255, 255, 255]);
+                }
+            }
+            if (text_y + text_height) < height && x < width {
+                if let Some(pixel) = img.get_pixel_mut_checked(x, text_y + text_height) {
+                    *pixel = Rgb([255, 255, 255]);
+                }
+            }
+        }
+        for y in text_y..=(text_y + text_height) {
+            if y < height && text_x < width {
+                if let Some(pixel) = img.get_pixel_mut_checked(text_x, y) {
+                    *pixel = Rgb([255, 255, 255]);
+                }
+            }
+            if y < height && (text_x + text_width) < width {
+                if let Some(pixel) = img.get_pixel_mut_checked(text_x + text_width, y) {
+                    *pixel = Rgb([255, 255, 255]);
+                }
+            }
+        }
+    }
+    
+    // 将图像编码为JPEG并转换为base64
+    let mut buffer = Vec::new();
+    {
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 80);
+        encoder.encode(
+            &img.as_raw(),
+            width,
+            height,
+            image::ColorType::Rgb8
+        ).map_err(|e| format!("图像编码失败: {}", e))?;
+    }
+    
+    let base64_string = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buffer);
+    Ok(base64_string)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             rename, exists, is_file, read_dir, basename, get_file_time,
             open_with_default_app, open_with_custom_app, get_file_info,
-            open_folder_in_explorer, get_safe_filename, generate_temp_filename
+            open_folder_in_explorer, get_safe_filename, generate_temp_filename,
+            generate_video_thumbnail
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .run(tauri::generate_context!())

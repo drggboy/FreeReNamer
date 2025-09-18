@@ -4,7 +4,7 @@ import { fileItemInfoQueryOptions } from '@/lib/queries/file';
 import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, getProfileFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
-import { Image, ExternalLink, Lock, X } from 'lucide-react';
+import { Image, ExternalLink, Lock, X, Video } from 'lucide-react';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
 
@@ -214,9 +214,9 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     }
   }, [columnWidths, deleteMode]);
 
-  // 获取图片缩略图URL
+  // 获取缩略图URL（支持图片和视频）
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
-    if (!fileItemInfo?.fileInfo.isImage) {
+    if (!fileItemInfo?.fileInfo.isImage && !fileItemInfo?.fileInfo.isVideo) {
       return null;
     }
     
@@ -239,6 +239,21 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
             throw new Error(`文件不存在: ${file}`);
           }
           
+          // 如果是视频文件，生成视频缩略图
+          if (fileItemInfo.fileInfo.isVideo) {
+            const { generateVideoThumbnail } = await import('@/lib/video-thumbnail');
+            const thumbnailUrl = await generateVideoThumbnail(file, {
+              width: 160,
+              height: 120,
+              seekTime: 1
+            });
+            
+            // 保存到缓存
+            thumbnailCache.set(cacheKey, thumbnailUrl);
+            return thumbnailUrl;
+          }
+          
+          // 图片文件处理逻辑
           // 直接使用base64方式，避免asset协议问题
           const { readBinaryFile } = await import('@tauri-apps/api/fs');
           const { getMimeType } = await import('@/lib/file');
@@ -258,7 +273,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           thumbnailCache.set(cacheKey, dataUrl);
           return dataUrl;
         } catch (err) {
-          console.error('❌ [Tauri] 读取图片错误:', err);
+          console.error('❌ [Tauri] 读取文件错误:', err);
           console.error('❌ [Tauri] 错误详情:', (err as any)?.message || err);
           console.error('❌ [Tauri] 错误堆栈:', (err as any)?.stack || '无堆栈信息');
           throw err;
@@ -273,6 +288,22 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         // 如果是FileSystemFileHandle
         const fileHandle = file as unknown as FileSystemFileHandle;
         const fileObj = await fileHandle.getFile();
+        
+        // 如果是视频文件，生成视频缩略图
+        if (fileItemInfo.fileInfo.isVideo) {
+          const { generateVideoThumbnail } = await import('@/lib/video-thumbnail');
+          const thumbnailUrl = await generateVideoThumbnail(fileHandle, {
+            width: 160,
+            height: 120,
+            seekTime: 1
+          });
+          
+          // 保存到缓存
+          thumbnailCache.set(cacheKey, thumbnailUrl);
+          return thumbnailUrl;
+        }
+        
+        // 图片文件处理逻辑
         const url = URL.createObjectURL(fileObj);
         // 保存到缓存
         thumbnailCache.set(cacheKey, url);
@@ -282,7 +313,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       console.error('获取缩略图URL失败:', error);
       return null;
     }
-  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.fullName]);
+  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.fullName]);
 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [thumbnailError, setThumbnailError] = useState(false);
@@ -293,7 +324,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     let mounted = true;
     
     
-    if (fileItemInfo?.fileInfo.isImage) {
+    if (fileItemInfo?.fileInfo.isImage || fileItemInfo?.fileInfo.isVideo) {
       // 检查缓存中是否已有此文件的缩略图
       const cacheKey = `${file}`;
       const cachedUrl = thumbnailCache.get(cacheKey);
@@ -341,11 +372,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       
       // 注意：不再在每次组件卸载时释放URL，而是在应用关闭或清理缓存时统一处理
     };
-  }, [fileItemInfo?.fileInfo.isImage, file, getThumbnailUrl]);
+  }, [fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, file, getThumbnailUrl]);
 
-  // 处理图片点击事件，打开图片文件
+  // 处理图片/视频点击事件，打开文件
   const handleImageClick = useCallback(async () => {
-    if (fileItemInfo?.fileInfo.isImage) {
+    if (fileItemInfo?.fileInfo.isImage || fileItemInfo?.fileInfo.isVideo) {
       // 设置当前缩略图为选中状态
       atomStore.set(selectedThumbnailAtom, file);
       
@@ -449,18 +480,26 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         {fileItemInfo.fileInfo.timeString || '-'}
       </span>
       <span className="flex size-full items-center justify-center px-2 py-1">
-        {fileItemInfo.fileInfo.isImage && (
+        {(fileItemInfo.fileInfo.isImage || fileItemInfo.fileInfo.isVideo) && (
           <>
             {thumbnailLoading && (
               <div className="flex flex-col items-center justify-center text-xs text-gray-500">
-                <Image className="h-6 w-6 animate-pulse text-gray-400" />
+                {fileItemInfo.fileInfo.isVideo ? (
+                  <Video className="h-6 w-6 animate-pulse text-gray-400" />
+                ) : (
+                  <Image className="h-6 w-6 animate-pulse text-gray-400" />
+                )}
                 <span>加载中...</span>
               </div>
             )}
             
             {thumbnailError && (
               <div className="flex flex-col items-center justify-center text-xs text-red-500" title={file}>
-                <Image className="h-6 w-6 text-red-400" />
+                {fileItemInfo.fileInfo.isVideo ? (
+                  <Video className="h-6 w-6 text-red-400" />
+                ) : (
+                  <Image className="h-6 w-6 text-red-400" />
+                )}
                 <span>加载失败</span>
               </div>
             )}
@@ -475,10 +514,10 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
                   src={thumbnailUrl} 
                   alt={fileItemInfo.fileInfo.fullName} 
                   className="max-h-10 max-w-16 object-contain cursor-pointer transition-all hover:scale-105 hover:shadow-md"
-                  title="点击打开原图"
+                  title={fileItemInfo.fileInfo.isVideo ? "点击打开视频" : "点击打开原图"}
                   onClick={handleImageClick}
                   onError={() => {
-                    console.error('图片加载失败:', thumbnailUrl);
+                    console.error(`${fileItemInfo.fileInfo.isVideo ? '视频' : '图片'}缩略图加载失败:`, thumbnailUrl);
                     setThumbnailError(true);
                   }}
                 />

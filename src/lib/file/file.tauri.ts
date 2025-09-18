@@ -40,6 +40,16 @@ export function isImageFile(ext: string): boolean {
 }
 
 /**
+ * 检查文件是否为视频
+ * @param ext - 文件扩展名（带点，如 .mp4）
+ * @returns 是否为视频文件
+ */
+export function isVideoFile(ext: string): boolean {
+  const videoExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v', '.3gp', '.ogv'];
+  return videoExtensions.includes(ext.toLowerCase());
+}
+
+/**
  * 获取文件信息
  * @param file - 文件路径
  * @returns 文件信息对象，包含名称、扩展名和时间信息
@@ -49,14 +59,15 @@ export async function getFileInfo(file: string): Promise<FileInfo> {
   const name = await getBasename(file);
   const fullName = `${name}${ext}`;
   const isImage = isImageFile(ext);
+  const isVideo = isVideoFile(ext);
   
   try {
     const { invoke } = await import('@tauri-apps/api');
     const timestamp = await invoke<number>('get_file_time', { path: file });
     const timeString = formatTimestamp(timestamp);
     
-    return { name, ext, fullName, timestamp, timeString, isImage };
+    return { name, ext, fullName, timestamp, timeString, isImage, isVideo };
   } catch (err) {
-    return { name, ext, fullName, isImage };
+    return { name, ext, fullName, isImage, isVideo };
   }
 }
