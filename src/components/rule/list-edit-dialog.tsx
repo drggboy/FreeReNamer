@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -164,6 +164,19 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
   const [previewItems, setPreviewItems] = useState<string[]>([]);
   const [duplicateItems, setDuplicateItems] = useState<string[]>([]);
   const [itemIds, setItemIds] = useState<string[]>([]);
+  
+  // 用于同步滚动的refs
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 处理textarea滚动，同步更新行号区域的滚动位置
+   */
+  const handleTextareaScroll = () => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
 
   // 初始化数据
   useEffect(() => {
@@ -348,7 +361,10 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
             </label>
             <div className="flex-1 border rounded-md overflow-hidden flex bg-background">
               {/* 行号区域 */}
-              <div className="bg-muted/30 border-r px-3 py-2 text-right text-sm font-mono text-muted-foreground select-none min-w-[3rem] shrink-0">
+              <div 
+                ref={lineNumbersRef}
+                className="bg-muted/30 border-r px-3 py-2 text-right text-sm font-mono text-muted-foreground select-none min-w-[3rem] shrink-0 overflow-hidden"
+              >
                 {textContent.split('\n').map((_, index) => (
                   <div key={index} className="leading-6 h-6">
                     {index + 1}
@@ -357,8 +373,10 @@ export const ListEditDialog: React.FC<ListEditDialogProps> = ({
               </div>
               {/* 文本编辑区域 */}
               <Textarea
+                ref={textareaRef}
                 value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
+                onScroll={handleTextareaScroll}
                 placeholder="请输入文件名，每行一个"
                 className="flex-1 resize-none font-mono border-none focus-visible:ring-0 leading-6 bg-transparent"
                 style={{ 
