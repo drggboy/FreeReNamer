@@ -122,9 +122,9 @@ function SortableItem({
           size="sm"
           variant="ghost"
           onClick={() => onMoveUp(index)}
-          disabled={index === 0}
+          disabled={index === 0 || hasAnyDuplicates}
           className="h-6 w-6 p-0"
-          title="上移"
+          title={hasAnyDuplicates ? "存在重复项，无法操作" : "上移"}
         >
           <IconArrowUp className="h-3 w-3" />
         </Button>
@@ -132,9 +132,9 @@ function SortableItem({
           size="sm"
           variant="ghost"
           onClick={() => onMoveDown(index)}
-          disabled={index === totalItems - 1}
+          disabled={index === totalItems - 1 || hasAnyDuplicates}
           className="h-6 w-6 p-0"
-          title="下移"
+          title={hasAnyDuplicates ? "存在重复项，无法操作" : "下移"}
         >
           <IconArrowDown className="h-3 w-3" />
         </Button>
@@ -142,8 +142,9 @@ function SortableItem({
           size="sm"
           variant="ghost"
           onClick={() => onDelete(index)}
+          disabled={hasAnyDuplicates}
           className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-          title="删除"
+          title={hasAnyDuplicates ? "存在重复项，无法操作" : "删除"}
         >
           <IconTrash className="h-3 w-3" />
         </Button>
