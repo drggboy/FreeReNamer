@@ -17,6 +17,144 @@ import { showConfirm, showRenameDialog } from '@/lib/ui';
 import { toast } from 'sonner';
 import { updateProfile } from '@/lib/profile';
 
+// 冲突检查结果类型
+interface ConflictCheckResult {
+  hasConflicts: boolean;
+  conflicts: Array<{
+    targetName: string;
+    files: string[];
+    type: 'duplicate_rename' | 'existing_file';
+  }>;
+}
+
+// 检查重命名冲突
+async function checkRenameConflicts(
+  files: (string | FileSystemFileHandle)[],
+  sortedIndices: number[],
+  profile: any,
+  fileItemRefs: any
+): Promise<ConflictCheckResult> {
+  const conflicts: ConflictCheckResult['conflicts'] = [];
+  const targetNames = new Map<string, string[]>(); // 目标名称 -> 源文件列表
+  
+  // 获取当前文件夹路径
+  let currentFolderPath: string | null = null;
+  if (__PLATFORM__ === __PLATFORM_TAURI__) {
+    const currentFolder = atomStore.get(getProfileCurrentFolderAtom(profile?.id || ''));
+    currentFolderPath = typeof currentFolder === 'string' ? currentFolder : null;
+  }
+
+  // 第一步：收集所有重命名操作的目标名称
+  for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
+    const originalIndex = sortedIndices[displayIndex];
+    const file = files[originalIndex] as string;
+    
+    try {
+      const fileInfo = await getFileInfo(file);
+      let targetName = fileInfo.fullName;
+      
+      // 检查手动修改
+      let hasManualRename = false;
+      if (fileItemRefs) {
+        const fileRef = fileItemRefs.get(file);
+        if (fileRef?.current?.hasPendingRename && fileRef.current.hasPendingRename()) {
+          const manualName = fileRef.current.getManualName?.();
+          if (manualName && manualName.trim() && manualName !== fileInfo.fullName) {
+            targetName = manualName;
+            hasManualRename = true;
+          }
+        }
+      }
+      
+      // 如果没有手动修改，应用规则重命名
+      if (!hasManualRename) {
+        const ruleOutput = await execRules(
+          profile?.rules?.filter((rule: any) => rule.enabled) ?? [],
+          {
+            fileInfo,
+            index: displayIndex,
+          },
+        );
+        
+        if (ruleOutput && ruleOutput !== fileInfo.fullName) {
+          targetName = ruleOutput;
+        }
+      }
+
+      // 如果目标名称与原名称不同，记录重命名操作
+      if (targetName !== fileInfo.fullName) {
+        if (!targetNames.has(targetName)) {
+          targetNames.set(targetName, []);
+        }
+        targetNames.get(targetName)!.push(file);
+      }
+    } catch (error) {
+      console.error(`检查重命名冲突时失败: ${file}`, error);
+    }
+  }
+
+  // 第二步：检查重命名目标名称之间的冲突
+  for (const [targetName, sourceFiles] of targetNames.entries()) {
+    if (sourceFiles.length > 1) {
+      conflicts.push({
+        targetName,
+        files: sourceFiles,
+        type: 'duplicate_rename'
+      });
+    }
+  }
+
+  // 第三步：检查目标名称是否与被移除的文件冲突（Tauri平台）
+  if (__PLATFORM__ === __PLATFORM_TAURI__ && currentFolderPath) {
+    try {
+      const { invoke } = await import('@tauri-apps/api');
+      
+      // 获取文件夹中的所有文件（包括已从列表移除的文件）
+      const allFilesInFolder = await invoke<string[]>('read_dir', { path: currentFolderPath });
+      
+      // 获取当前文件列表中的所有文件路径
+      const currentFileSet = new Set(files.map(f => typeof f === 'string' ? f : f.name));
+      
+      // 找出被移除的文件（在文件系统中存在但不在当前文件列表中）
+      const removedFiles: string[] = [];
+      for (const filePath of allFilesInFolder) {
+        if (!currentFileSet.has(filePath)) {
+          removedFiles.push(filePath);
+        }
+      }
+      
+      // 获取被移除文件的名称集合
+      const removedFileNames = new Set<string>();
+      for (const filePath of removedFiles) {
+        try {
+          const fileInfo = await getFileInfo(filePath);
+          removedFileNames.add(fileInfo.fullName);
+        } catch (error) {
+          console.warn(`无法获取被移除文件的信息: ${filePath}`, error);
+        }
+      }
+      
+      // 检查重命名目标名称是否与被移除的文件名冲突
+      for (const [targetName, sourceFiles] of targetNames.entries()) {
+        if (removedFileNames.has(targetName)) {
+          conflicts.push({
+            targetName,
+            files: sourceFiles,
+            type: 'existing_file'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('检查与被移除文件的冲突时失败:', error);
+    }
+  }
+
+  return {
+    hasConflicts: conflicts.length > 0,
+    conflicts
+  };
+}
+
 export const Route = createFileRoute('/profile')({
   component: Component,
 });
@@ -84,35 +222,7 @@ function Component() {
         ? atomStore.get(getProfileFilesAtom(profileId))
         : atomStore.get(filesAtom);
       
-      // 首先尝试执行所有待处理的手动修改
-      let manualRenamedCount = 0;
-      
-      try {
-        // 获取所有待重命名的文件项引用
-        const fileItemRefs = window.__FILE_ITEM_REFS__;
-        if (fileItemRefs) {
-          // 执行所有待处理的手动修改
-          const promises = Array.from(fileItemRefs.entries()).map(async ([_, ref]) => {
-            if (ref.current?.hasPendingRename && ref.current.hasPendingRename()) {
-              const success = await ref.current.executeRename();
-              if (success) {
-                manualRenamedCount++;
-              }
-            }
-          });
-          
-          await Promise.all(promises);
-          
-          // 显示手动重命名结果
-          if (manualRenamedCount > 0) {
-            toast.success(`已应用 ${manualRenamedCount} 个手动修改`);
-          }
-        }
-      } catch (error) {
-        console.error('执行手动修改失败:', error);
-      }
-      
-      // 然后执行规则重命名（使用两阶段重命名避免文件名交换冲突）
+      // 统一重命名执行：将手动修改和规则重命名合并为一个步骤
       const updatedFiles = [...files];
       const filePathMap = new Map<string, string>(); // 记录旧路径到新路径的映射
       let successCount = 0;
@@ -124,6 +234,43 @@ function Component() {
         ? atomStore.get(getProfileFileSortConfigAtom(profileId))
         : atomStore.get(fileSortConfigAtom);
       const sortedIndices = await getSortedFileIndices(files, sortConfig);
+      
+      // 获取所有待重命名的文件项引用（用于获取手动修改的名称）
+      const fileItemRefs = window.__FILE_ITEM_REFS__;
+      
+      // 执行前冲突检查
+      const conflictCheckResult = await checkRenameConflicts(files, sortedIndices, profile, fileItemRefs);
+      if (conflictCheckResult.hasConflicts) {
+        // 重置执行状态
+        atomStore.set(isExecutingAtom, false);
+        
+        // 显示冲突警告
+        const duplicateRenames = conflictCheckResult.conflicts.filter(c => c.type === 'duplicate_rename');
+        const existingFileConflicts = conflictCheckResult.conflicts.filter(c => c.type === 'existing_file');
+        
+        let conflictMessage = '检测到文件名冲突，无法执行重命名：\n\n';
+        
+        if (duplicateRenames.length > 0) {
+          conflictMessage += '【重复的重命名目标】\n';
+          conflictMessage += duplicateRenames.map(conflict => 
+            `"${conflict.targetName}" ← (${conflict.files.join(', ')})`
+          ).join('\n');
+          conflictMessage += '\n\n';
+        }
+        
+        if (existingFileConflicts.length > 0) {
+          conflictMessage += '【与被移除文件的名称冲突】\n';
+          conflictMessage += existingFileConflicts.map(conflict => 
+            `"${conflict.targetName}" ← (${conflict.files.join(', ')})`
+          ).join('\n');
+          conflictMessage += '\n\n';
+        }
+        
+        conflictMessage += '请检查规则配置或手动修改的文件名。';
+        
+        toast.error(conflictMessage, { duration: 10000 });
+        return;
+      }
       
       if (__PLATFORM__ === __PLATFORM_TAURI__) {
         // Tauri平台：使用两阶段重命名
@@ -146,29 +293,53 @@ function Component() {
           newPath: string;
         }> = [];
         
-        // 第一步：收集所有重命名操作
+        // 第一步：收集所有重命名操作（统一处理手动修改和规则重命名）
         for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
           const originalIndex = sortedIndices[displayIndex];
           const file = files[originalIndex] as string;
           
           try {
             const fileInfo = await getFileInfo(file);
-            const output = await execRules(
-              profile?.rules?.filter((rule) => rule.enabled) ?? [],
-              {
-                fileInfo,
-                index: displayIndex,
-              },
-            );
+            let targetName = fileInfo.fullName;
+            
+            // 优先检查是否有手动修改
+            let hasManualRename = false;
+            if (fileItemRefs) {
+              const fileRef = fileItemRefs.get(file);
+              if (fileRef?.current?.hasPendingRename && fileRef.current.hasPendingRename()) {
+                // 有手动修改，使用手动修改的名称
+                const manualName = fileRef.current.getManualName?.();
+                if (manualName && manualName.trim() && manualName !== fileInfo.fullName) {
+                  targetName = manualName;
+                  hasManualRename = true;
+                }
+              }
+            }
+            
+            // 如果没有手动修改，则应用规则重命名
+            if (!hasManualRename) {
+              const ruleOutput = await execRules(
+                profile?.rules?.filter((rule) => rule.enabled) ?? [],
+                {
+                  fileInfo,
+                  index: displayIndex,
+                },
+              );
+              
+              if (ruleOutput && ruleOutput !== fileInfo.fullName) {
+                targetName = ruleOutput;
+              }
+            }
 
-            if (!output || output === fileInfo.fullName) {
+            // 如果最终名称与原名称相同，跳过
+            if (targetName === fileInfo.fullName) {
               continue;
             }
 
             renameOperations.push({
               originalIndex,
               file,
-              targetName: output,
+              targetName,
             });
           } catch (error) {
             console.error(`准备重命名操作失败: ${file}`, error);

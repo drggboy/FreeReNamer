@@ -21,6 +21,7 @@ export interface FileItemProps {
 export interface FileItemHandle {
   executeRename: () => Promise<boolean>;
   hasPendingRename: () => boolean;
+  getManualName: () => string;
 }
 
 // 创建全局缩略图缓存对象
@@ -147,8 +148,9 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       }
       return false;
     },
-    hasPendingRename: () => isPendingRename
-  }), [isPendingRename, handleConfirmEdit]);
+    hasPendingRename: () => isPendingRename,
+    getManualName: () => manualName
+  }), [isPendingRename, handleConfirmEdit, manualName]);
 
   // 当fileItemInfo更新时，初始化手动修改值为预览值或原文件名
   useEffect(() => {

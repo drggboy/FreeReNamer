@@ -121,3 +121,8 @@
       display: none !important;
     }
   }
+
+  /* Toast 位置调整 - 避免遮挡执行按钮 */
+  [data-sonner-toaster] {
+    top: 60px !important;
+  }
