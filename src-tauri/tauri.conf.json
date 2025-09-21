@@ -44,7 +44,7 @@
     "windows": [
       {
         "title": "FreeReNamer",
-        "width": 800,
+        "width": 1000,
         "height": 600,
         "visible": true,
         "resizable": true,

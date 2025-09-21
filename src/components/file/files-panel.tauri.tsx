@@ -783,7 +783,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         </span>
         
         <span className="flex size-full items-center px-2 relative">
-          预览
+          规则预览
           <ResizableDivider 
             className="absolute right-0 h-full"
             onResizeStart={handleResizeStart}

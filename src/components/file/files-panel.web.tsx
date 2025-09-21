@@ -658,7 +658,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         </span>
         
         <span className="flex size-full items-center px-2">
-          预览
+          规则预览
         </span>
       </div>
       
