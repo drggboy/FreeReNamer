@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useCallback, useState, useEffect, useImperativeHandle, forwardRef, memo } from 'react';
 import { fileItemInfoQueryOptions } from '@/lib/queries/file';
-import { atomStore, selectedFilesAtom, imageViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, getProfileFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
+import { atomStore, selectedFilesAtom, imageViewerAppAtom, videoViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, getProfileFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
 import { Image, ExternalLink, Lock, X, Video } from 'lucide-react';
@@ -46,6 +46,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   // 根据平台选择正确的selectedFiles atom
   const selectedFiles = useAtomValue(__PLATFORM__ === __PLATFORM_TAURI__ ? getProfileSelectedFilesAtom(profileId) : selectedFilesAtom);
   const imageViewerApp = useAtomValue(imageViewerAppAtom);
+  const videoViewerApp = useAtomValue(videoViewerAppAtom);
   const selectedThumbnail = useAtomValue(selectedThumbnailAtom);
   const selected = useMemo(
     () => selectedFiles.includes(file),
@@ -396,8 +397,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
           const { invoke } = await import('@tauri-apps/api');
           
-          // 如果设置了自定义图片查看器，优先使用
-          if (imageViewerApp) {
+          // 根据文件类型选择对应的查看器
+          const isImage = fileItemInfo?.fileInfo.isImage;
+          const isVideo = fileItemInfo?.fileInfo.isVideo;
+          
+          if (isImage && imageViewerApp) {
             try {
               await invoke('open_with_custom_app', { 
                 appPath: imageViewerApp,
@@ -405,7 +409,18 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
               });
               return;
             } catch (err) {
-              console.error('使用自定义应用打开失败:', err);
+              console.error('使用自定义图片查看器打开失败:', err);
+              // 失败后继续尝试其他方式
+            }
+          } else if (isVideo && videoViewerApp) {
+            try {
+              await invoke('open_with_custom_app', { 
+                appPath: videoViewerApp,
+                filePath: file
+              });
+              return;
+            } catch (err) {
+              console.error('使用自定义视频播放器打开失败:', err);
               // 失败后继续尝试其他方式
             }
           }

@@ -3,6 +3,7 @@ import {
   columnWidthsAtom,
   DEFAULT_COLUMN_WIDTHS,
   imageViewerAppAtom,
+  videoViewerAppAtom,
   getProfileFilesAtom,
   getProfileSelectedFilesAtom,
   getProfileCurrentFolderAtom,
@@ -25,7 +26,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
-import { ChevronDown, ChevronUp, Settings, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCw, Trash2, Loader2, Image, Video } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 import { calculateFilenameWidth, shouldAdjustFilenameWidth, calculateSmartColumnWidths } from '@/lib/filename-width-calculator';
@@ -71,6 +72,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const sortConfig = useAtomValue(getProfileFileSortConfigAtom(profileId));
   const [columnWidths, setColumnWidths] = useAtom(columnWidthsAtom);
   const [imageViewerApp, setImageViewerApp] = useAtom(imageViewerAppAtom);
+  const [videoViewerApp, setVideoViewerApp] = useAtom(videoViewerAppAtom);
   const [currentFolder, setCurrentFolder] = useAtom(getProfileCurrentFolderAtom(profileId));
   const [deleteMode, setDeleteMode] = useAtom(deleteModeAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
@@ -385,6 +387,36 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     console.log('已清除图片查看器设置');
   }, [setImageViewerApp]);
 
+  // 选择视频播放器应用
+  const selectVideoViewer = useCallback(async () => {
+    try {
+      const selectedApp = await open({
+        multiple: false,
+        directory: false,
+        title: "选择视频播放器",
+        filters: [
+          {
+            name: "可执行文件",
+            extensions: ["exe", "app", "bat", "cmd", "sh"]
+          }
+        ]
+      });
+
+      if (selectedApp && typeof selectedApp === 'string') {
+        setVideoViewerApp(selectedApp);
+        console.log('已设置视频播放器:', selectedApp);
+      }
+    } catch (error) {
+      console.error('选择视频播放器失败:', error);
+    }
+  }, [setVideoViewerApp]);
+
+  // 清除视频播放器设置
+  const clearVideoViewer = useCallback(() => {
+    setVideoViewerApp(null);
+    console.log('已清除视频播放器设置');
+  }, [setVideoViewerApp]);
+
   // 切换删除模式
   const toggleDeleteMode = useCallback(() => {
     setDeleteMode(prev => {
@@ -695,11 +727,11 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             size="sm"
             variant="outline"
             onClick={selectImageViewer}
-            title={imageViewerApp ? `当前图片查看器: ${imageViewerApp}` : "设置图片查看器"}
+            title={imageViewerApp ? `当前图片查看器: ${imageViewerApp}` : "选择图片查看器"}
             className="flex items-center gap-1"
           >
-            <Settings className="h-4 w-4" />
-            {imageViewerApp ? "更改" : "设置"} 
+            <Image className="h-4 w-4" />
+            图片查看器
             {imageViewerApp && (
               <Button
                 variant="ghost" 
@@ -710,6 +742,30 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
                   clearImageViewer();
                 }}
                 title="清除图片查看器设置"
+              >
+                ×
+              </Button>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={selectVideoViewer}
+            title={videoViewerApp ? `当前视频播放器: ${videoViewerApp}` : "选择视频播放器"}
+            className="flex items-center gap-1"
+          >
+            <Video className="h-4 w-4" />
+            视频播放器
+            {videoViewerApp && (
+              <Button
+                variant="ghost" 
+                size="sm"
+                className="h-5 px-1 py-0 text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearVideoViewer();
+                }}
+                title="清除视频播放器设置"
               >
                 ×
               </Button>
