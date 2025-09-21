@@ -1,0 +1,84 @@
+---
+description: 组件状态同步和数据一致性最佳实践
+---
+
+# 组件状态同步最佳实践
+
+## 核心问题
+避免外部数据更新时意外覆盖用户输入的状态。
+
+## 常见陷阱
+```typescript
+// ❌ 错误：每次外部数据更新都重置用户输入
+useEffect(() => {
+  if (externalData) {
+    setUserInput(externalData.value);
+  }
+}, [externalData]);
+```
+
+## 正确做法
+```typescript
+// ✅ 正确：只在必要时同步外部数据
+useEffect(() => {
+  if (externalData) {
+    // 只有在用户没有修改过时才同步
+    if (!hasUserModifications) {
+      setUserInput(externalData.value);
+    }
+  }
+}, [externalData, hasUserModifications]);
+```
+
+## 实际案例
+在文件重命名组件中：
+- `manualName` 状态存储用户输入
+- `isPendingRename` 标记用户是否有修改
+- 只有在 `!isPendingRename` 时才同步规则预览结果
+
+## 状态标记模式
+使用专门的状态标记来跟踪用户是否进行了修改：
+
+```typescript
+const [userInput, setUserInput] = useState('');
+const [hasUserModifications, setHasUserModifications] = useState(false);
+
+// 用户输入处理
+const handleUserInput = (value: string) => {
+  setUserInput(value);
+  setHasUserModifications(true);
+};
+
+// 重置用户修改
+const resetUserModifications = () => {
+  setHasUserModifications(false);
+  setUserInput(externalData.value);
+};
+```
+
+## useImperativeHandle 模式
+通过ref暴露组件的最终状态：
+
+```typescript
+useImperativeHandle(ref, () => ({
+  getFinalValue: () => userInput || externalData.value,
+  hasModifications: () => hasUserModifications,
+  resetModifications: resetUserModifications
+}), [userInput, externalData, hasUserModifications]);
+```
+
+## 适用场景
+- 表单组件中的输入字段
+- 可编辑的表格单元格
+- 实时预览与手动编辑的结合
+- 任何需要用户输入优先级的场景
+
+## 相关组件
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件名手动编辑
+- [src/components/rule/](mdc:src/components/rule/) - 规则编辑组件
+
+## 测试要点
+1. 验证外部数据更新不会覆盖用户输入
+2. 验证用户清空输入后能正确同步外部数据
+3. 验证状态重置功能正常工作
+4. 验证通过ref获取的最终值正确

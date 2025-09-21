@@ -1,0 +1,138 @@
+---
+description: UI组件模式和最佳实践
+globs: src/components/ui/*.tsx,src/components/rule/*.tsx
+---
+# UI组件模式和最佳实践
+
+## Badge组件使用规范
+
+### 导入方式
+```typescript
+// 正确：使用绝对路径导入
+import { Badge } from '@/components/ui/badge';
+
+// 错误：相对路径可能导致类型检查问题
+import { Badge } from '../ui/badge';
+```
+
+### 变体使用
+- **outline**: 用于主要信息标识（如模板名称）
+- **secondary**: 用于次要信息（如数量统计）
+- **default**: 用于状态标识
+- **destructive**: 用于错误或警告状态
+
+### 样式规范
+```typescript
+// 统一使用text-xs保持大小一致
+<Badge variant="outline" className="text-xs">
+  模板: {templateName}
+</Badge>
+```
+
+## 布局模式
+
+### 水平信息布局
+```typescript
+// 推荐：信息项在同一行显示
+<div className="flex items-center gap-2 flex-1 flex-wrap">
+  <span>{description}</span>
+  {templateInfo && (
+    <>
+      <Badge variant="outline" className="text-xs">...</Badge>
+      <Badge variant="secondary" className="text-xs">...</Badge>
+    </>
+  )}
+</div>
+```
+
+### 响应式考虑
+- 使用`flex-wrap`确保内容过多时能够换行
+- 使用`gap-2`提供适当的间距
+- 使用`flex-1`确保容器占满可用空间
+
+## 右键菜单模式
+
+### 条件渲染
+```typescript
+// 根据规则类型和回调函数存在性决定菜单项
+{rule.type === RULE_MAP_TYPE && onSecondaryEdit ? (
+  <ContextMenuItem onClick={onSecondaryEdit}>编辑</ContextMenuItem>
+) : (
+  <ContextMenuItem onClick={onEdit}>编辑</ContextMenuItem>
+)}
+```
+
+### 菜单结构
+1. **主要操作**: 编辑（根据规则类型选择处理函数）
+2. **次要操作**: 重命名（可选）
+3. **分隔线**: `<ContextMenuSeparator />`
+4. **危险操作**: 删除
+
+## 对话框设计模式
+
+### 头部信息区域
+```typescript
+// 模板选择器放在顶部，便于用户快速切换
+<div className="space-y-4 mb-4">
+  {/* 模板选择器 */}
+  <div className="flex items-center justify-between">
+    <select>...</select>
+    <div className="text-sm text-muted-foreground">
+      正在编辑: {templateName}
+    </div>
+  </div>
+  
+  {/* 其他选项 */}
+  <div className="flex items-center space-x-2">
+    <input type="checkbox" />
+    <label>包含扩展名</label>
+  </div>
+</div>
+```
+
+### 主内容区域
+- **左右分栏**: `<div className="flex-1 flex gap-4 min-h-0">`
+- **编辑区域**: 文本编辑器 + 行号
+- **预览区域**: 可拖拽排序的列表
+
+### 底部操作区域
+- **信息提示**: 说明当前操作的影响范围
+- **按钮组**: 取消、覆盖模板、新建模板、保存实例
+
+## 状态管理模式
+
+### 模板相关状态
+```typescript
+const [globalTemplates, setGlobalTemplates] = useState<ListConfig[]>([]);
+const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
+```
+
+### 编辑相关状态
+```typescript
+const [textContent, setTextContent] = useState('');
+const [previewItems, setPreviewItems] = useState<string[]>([]);
+const [itemIds, setItemIds] = useState<string[]>([]);
+```
+
+### 状态同步原则
+- 模板切换时同步更新所有相关状态
+- 使用useEffect处理状态变化的副作用
+- 避免在组件内部重复声明相同的计算值
+
+## 错误处理和用户反馈
+
+### Toast通知
+```typescript
+import { toast } from 'sonner';
+
+// 成功操作
+toast.success(`已覆盖模板 "${templateName}"`);
+
+// 错误处理
+toast.error('覆盖模板失败');
+```
+
+### 验证和禁用状态
+- 检查重复项后禁用相关操作
+- 表单验证失败时禁用提交按钮
+- 提供清晰的错误信息和解决建议

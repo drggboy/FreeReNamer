@@ -1,0 +1,28 @@
+---
+description: 文件重命名执行逻辑
+globs: src/routes/profile/route.tsx,src/components/file/file-item.tsx
+---
+
+# 文件重命名执行逻辑
+
+## 统一执行原则
+文件重命名应该是统一的一个步骤，不要分为手动重命名和规则重命名两个独立阶段。
+
+## 核心执行文件
+- [src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 主要的重命名执行逻辑
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件项组件，包含手动重命名功能
+
+## 执行流程
+1. **统一收集阶段**：遍历所有文件，对每个文件优先检查手动修改，否则应用规则重命名
+2. **冲突检查**：检查重命名目标之间的冲突以及与被移除文件的冲突
+3. **两阶段重命名**：Tauri平台使用临时文件名避免文件名交换冲突
+4. **状态更新**：更新文件列表和选中状态
+
+## 关键接口
+- `FileItemHandle.getManualName()` - 获取手动修改的文件名
+- `FileItemHandle.hasPendingRename()` - 检查是否有待处理的手动重命名
+- `window.__FILE_ITEM_REFS__` - 全局文件项引用映射
+- `checkRenameConflicts()` - 执行前的冲突检查函数
+
+## 相关规则
+参见 [07-conflict-detection.mdc](mdc:.cursor/rules/07-conflict-detection.mdc) 了解详细的冲突检测逻辑。

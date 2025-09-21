@@ -1,0 +1,30 @@
+---
+description: 文件管理和缓存系统
+globs: src/components/file/**/*.tsx,src/lib/file/**/*.ts
+---
+
+# 文件管理和缓存系统
+
+## 全局缓存对象
+- `window.__THUMBNAIL_CACHE__` - 缩略图缓存，存储blob URL
+- `window.__FILE_ITEM_REFS__` - 文件项组件引用映射
+- `window.__ALL_FILES__` - 所有文件列表的全局引用
+
+## 缓存清理时机
+1. 文件夹切换时
+2. 文件重命名后
+3. 组件卸载时
+4. 手动刷新时
+
+## 文件信息查询
+- [src/lib/queries/file.ts](mdc:src/lib/queries/file.ts) - 文件信息查询逻辑
+- 使用React Query缓存文件信息
+- `QueryType.FileItemInfo` - 文件信息查询类型
+
+## 重要函数
+- `clearThumbnailCache()` - 清理缩略图缓存并释放blob URL
+- `getFileInfo(file)` - 获取文件信息
+- `getSortedFileIndices(files, sortConfig)` - 获取排序后的文件索引
+
+## 文件操作
+文件选择、排序、删除等操作都需要考虑缓存的同步更新。

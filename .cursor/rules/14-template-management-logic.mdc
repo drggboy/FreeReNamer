@@ -1,0 +1,128 @@
+---
+description: 列表映射规则模板管理和数据流
+globs: src/lib/rules/map.ts,src/components/rule/*map*.tsx
+---
+# 列表映射规则模板管理和数据流
+
+## 核心数据结构
+
+### ListConfig接口
+```typescript
+interface ListConfig {
+  name: string;        // 模板名称
+  targetNames: string[]; // 目标文件名列表
+}
+```
+
+### RuleMapInfo接口
+```typescript
+interface RuleMapInfo extends RuleCommonInfo {
+  lists: ListConfig[];     // 规则实例的列表配置
+  activeListIndex: number; // 当前活动列表索引
+}
+```
+
+## 全局模板管理
+
+### 存储位置
+- **存储键**: `GLOBAL_MAP_LISTS_KEY = 'global_map_lists'`
+- **文件**: [src/lib/rules/map.ts](mdc:src/lib/rules/map.ts)
+
+### 核心函数
+- `getGlobalMapLists()`: 获取全局模板列表
+- `saveGlobalMapLists(lists)`: 保存全局模板列表
+- **默认模板**: `DEFAULT_GLOBAL_LISTS`提供初始模板
+
+## 模板切换功能实现
+
+### 模板选择器
+```typescript
+// 在二次编辑对话框中的实现
+const handleTemplateChange = (templateIndex: number) => {
+  setSelectedTemplateIndex(templateIndex);
+  const selectedTemplate = globalTemplates[templateIndex];
+  
+  // 更新编辑器内容
+  const items = [...selectedTemplate.targetNames];
+  setTextContent(items.join('\n'));
+  setPreviewItems(items);
+  setItemIds(generateIds(items));
+};
+```
+
+### 初始化逻辑
+- 加载全局模板列表
+- 根据当前规则实例的活动列表名称匹配模板索引
+- 如果找不到匹配的模板，默认选择第一个模板
+
+## 保存操作的数据流
+
+### 1. 覆盖模板 (handleOverwrite)
+```typescript
+// 更新规则实例 - 使用选择的模板名称
+updatedRuleLists[activeListIndex] = {
+  name: selectedTemplate.name,
+  targetNames: previewItems
+};
+
+// 更新全局模板 - 覆盖选择的模板内容
+updatedGlobalTemplates[selectedTemplateIndex] = {
+  ...selectedTemplate,
+  targetNames: previewItems
+};
+```
+
+### 2. 保存规则实例 (handleSaveInstance)
+```typescript
+// 只更新规则实例，不影响全局模板
+clonedRuleLists[activeListIndex] = {
+  name: selectedTemplate?.name || activeList.name,
+  targetNames: [...previewItems]
+};
+```
+
+### 3. 新建模板 (handleConfirmSaveAsNewTemplate)
+```typescript
+// 创建新模板配置
+const newTemplateConfig: ListConfig = {
+  name: newTemplateName.trim(),
+  targetNames: previewItems
+};
+
+// 添加到全局模板列表
+const updatedGlobalTemplates = [...currentGlobalTemplates, newTemplateConfig];
+
+// 更新规则实例使用新模板名称
+updatedRuleLists[activeListIndex] = {
+  name: newTemplateName.trim(),
+  targetNames: previewItems
+};
+```
+
+## 数据隔离原则
+
+### 规则实例vs全局模板
+- **规则实例的lists**: 规则私有的模板副本，可以独立修改
+- **全局模板**: 共享的模板库，影响所有使用该模板的规则
+- **activeList**: 通过`rule.info.lists[rule.info.activeListIndex]`获取当前活动列表
+
+### 修改范围控制
+- **覆盖模板**: 影响全局模板和当前规则实例
+- **保存实例**: 仅影响当前规则实例
+- **新建模板**: 创建新的全局模板，当前规则实例使用新模板
+
+## 关键实现注意事项
+
+### 避免变量重复声明
+- 在组件顶层定义`activeList`
+- 在useEffect等函数中不要重复声明
+
+### 数据同步时机
+- 模板切换时立即更新编辑器内容
+- 保存时根据操作类型选择相应的更新策略
+- 使用深拷贝避免引用共享问题
+
+### 错误处理
+- 校验重复项后才允许保存
+- 检查模板索引有效性
+- 提供用户友好的错误提示

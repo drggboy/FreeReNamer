@@ -1,0 +1,31 @@
+---
+description: UI组件和用户交互
+globs: src/components/**/*.tsx
+---
+
+# UI组件和用户交互
+
+## 主要组件结构
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - 文件面板主组件
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 单个文件项组件
+- [src/components/ui/](mdc:src/components/ui/) - 基础UI组件
+
+## 列宽管理
+- 使用 `ColumnWidths` 类型定义列宽
+- 支持拖拽调整列宽
+- 智能重置列宽功能
+- 基于文件名长度自动调整
+
+## 文件操作状态
+- `isExecuting` - 执行状态，显示加载覆盖层
+- `deleteMode` - 删除模式切换
+- `isPendingRename` - 单个文件的待重命名状态
+
+## 用户交互
+- 手动编辑文件名：点击手动修改列可编辑
+- 批量操作：复选框选择文件
+- 排序：点击列标题切换排序
+- 执行：统一执行按钮处理所有重命名
+
+## 响应式设计
+组件使用百分比和rem单位，支持窗口大小调整。

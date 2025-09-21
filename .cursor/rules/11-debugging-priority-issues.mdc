@@ -1,0 +1,133 @@
+---
+description: 优先级和数据流问题的调试方法
+---
+
+# 优先级和数据流问题调试指南
+
+## 问题识别模式
+
+### 用户输入被覆盖问题
+**症状**：用户输入了A，但最终应用的是B
+**常见原因**：
+1. useEffect依赖导致状态被重置
+2. 组件重新渲染时状态初始化逻辑错误
+3. 父组件状态更新覆盖子组件状态
+
+### 调试步骤
+
+#### 1. 跟踪状态变化
+```typescript
+// 添加调试日志跟踪状态变化
+useEffect(() => {
+  console.log('🔍 [Debug] manualName changed:', manualName);
+}, [manualName]);
+
+useEffect(() => {
+  console.log('🔍 [Debug] fileItemInfo changed:', fileItemInfo?.preview);
+}, [fileItemInfo]);
+```
+
+#### 2. 检查useEffect依赖
+```typescript
+// 检查是否有意外的依赖导致重置
+useEffect(() => {
+  // 这里可能有问题：每次fileItemInfo更新都重置
+  setManualName(fileItemInfo?.preview);
+}, [fileItemInfo]); // ❌ 可能导致用户输入被覆盖
+```
+
+#### 3. 验证ref暴露的方法
+```typescript
+// 在执行时添加调试
+const finalName = fileRef.current?.getFinalName();
+console.log('🔍 [Debug] getFinalName():', finalName);
+console.log('🔍 [Debug] getManualName():', fileRef.current?.getManualName());
+```
+
+#### 4. 检查数据流
+```typescript
+// 跟踪从UI显示到执行的完整数据流
+console.log('🔍 [Debug] UI显示:', document.querySelector('[data-manual-name]')?.textContent);
+console.log('🔍 [Debug] 组件状态:', manualName);
+console.log('🔍 [Debug] 执行使用:', targetName);
+```
+
+## 常见问题模式
+
+### 模式1：初始化覆盖
+```typescript
+// ❌ 问题代码
+useEffect(() => {
+  setUserInput(externalData.value);
+}, [externalData]);
+
+// ✅ 修复代码
+useEffect(() => {
+  if (!hasUserModifications) {
+    setUserInput(externalData.value);
+  }
+}, [externalData, hasUserModifications]);
+```
+
+### 模式2：显示与状态不一致
+```typescript
+// 确保显示逻辑与ref方法一致
+const displayValue = manualName || (fileItemInfo?.preview || fileItemInfo?.fileInfo.fullName);
+const getFinalName = () => manualName || (fileItemInfo?.preview || fileItemInfo?.fileInfo.fullName || '');
+```
+
+### 模式3：执行逻辑复杂化
+```typescript
+// ❌ 复杂的条件判断
+if (hasManualRename) {
+  targetName = manualName;
+} else {
+  targetName = ruleOutput;
+}
+
+// ✅ 简化为统一接口
+const finalName = fileRef.current?.getFinalName();
+if (finalName && finalName.trim()) {
+  targetName = finalName;
+}
+```
+
+## 调试工具
+
+### 1. React DevTools
+- 检查组件状态变化
+- 跟踪props和state
+- 查看effect执行时机
+
+### 2. 控制台调试
+```typescript
+// 全局调试函数
+window.__DEBUG_FILE_ITEM__ = (file: string) => {
+  const ref = window.__FILE_ITEM_REFS__?.get(file);
+  if (ref?.current) {
+    console.log('=== File Item Debug ===');
+    console.log('Final Name:', ref.current.getFinalName());
+    console.log('Manual Name:', ref.current.getManualName());
+    console.log('Has Pending:', ref.current.hasPendingRename());
+  }
+};
+```
+
+### 3. 临时断点
+```typescript
+// 在关键路径添加断点
+debugger; // 在执行逻辑前停止
+const finalName = fileRef.current?.getFinalName();
+```
+
+## 预防措施
+
+1. **状态同步规则**：明确定义何时同步外部数据
+2. **接口一致性**：确保显示、获取、执行使用同一套逻辑
+3. **调试日志**：在关键状态变化点添加日志
+4. **单元测试**：测试边界情况和状态转换
+
+## 相关文件
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件项状态管理
+- [src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 执行逻辑
+- [src/lib/atoms](mdc:src/lib/atoms) - 全局状态管理

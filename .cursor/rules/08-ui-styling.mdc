@@ -1,0 +1,49 @@
+---
+description: UI样式和布局调整
+globs: src/styles.css,src/main.tsx,src/**/*.tsx
+---
+
+# UI样式和布局调整
+
+## Toast通知系统
+
+### 配置位置
+- 主配置：[src/main.tsx](mdc:src/main.tsx) - Toaster组件配置
+- 样式调整：[src/styles.css](mdc:src/styles.css) - CSS覆盖样式
+
+### 关键原则
+1. **避免遮挡重要按钮**：toast不应遮挡执行按钮等关键UI元素
+2. **使用CSS覆盖而非配置**：通过CSS选择器调整位置，避免破坏组件功能
+3. **保持样式一致性**：确保toast样式与整体UI风格协调
+
+### Toast位置调整
+```css
+/* 避免遮挡执行按钮 */
+[data-sonner-toaster] {
+  top: 60px !important;
+}
+```
+
+### 配置示例
+```tsx
+// 正确的基础配置
+<Toaster position="top-right" richColors />
+
+// 避免使用复杂的toastOptions配置，可能导致样式问题
+```
+
+## 执行按钮布局
+- 位置：右上角，高度48px（h-12）的顶部栏
+- 文件：[src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx)
+- Toast偏移：60px确保不遮挡此按钮
+
+## 样式调试原则
+1. 优先使用CSS覆盖而非组件配置修改
+2. 使用`!important`谨慎但必要时可用
+3. 通过数据属性选择器精确定位组件
+4. 测试样式修改对功能的影响
+
+## 相关文件
+- [src/styles.css](mdc:src/styles.css) - 全局样式和覆盖
+- [src/main.tsx](mdc:src/main.tsx) - 组件配置
+- Toast库：sonner - 通知组件库

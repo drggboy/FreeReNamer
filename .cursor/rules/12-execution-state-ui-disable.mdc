@@ -1,0 +1,70 @@
+---
+description: 执行状态下UI禁用模式和用户交互控制
+---
+
+# 执行状态下UI禁用模式
+
+## 核心原则
+在执行重命名等关键操作时，需要禁用可能影响操作的用户交互，确保操作的一致性和稳定性。
+
+## 执行状态管理
+- **状态原子**：`isExecutingAtom` - 全局执行状态控制
+- **设置位置**：[src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 在 `execProfile` mutation 开始时设置为 true
+- **重置时机**：操作完成（成功或失败）后设置为 false
+
+## UI禁用模式实现
+
+### 1. 功能函数禁用
+在可能影响执行的函数中添加执行状态检查：
+```typescript
+function changeSortType(type: FileSortType) {
+  // 如果正在调整列宽或正在执行重命名，不改变排序
+  if (isResizing || isExecuting) return;
+  // ... 原有逻辑
+}
+```
+
+### 2. 条件样式应用
+根据执行状态动态改变UI样式：
+```typescript
+className={`flex size-full items-center px-2 relative ${
+  isExecuting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+}`}
+```
+
+### 3. 视觉禁用效果
+- `cursor-not-allowed` - 显示禁用光标
+- `opacity-60` - 降低透明度表示不可用状态
+- 保持点击事件但在函数内部阻止执行
+
+## 应用场景
+
+### 文件列表表头排序
+- **文件**：[src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx)
+- **位置**：文件名和时间列的表头
+- **原因**：避免执行过程中排序改变影响重命名逻辑
+
+### 其他需要考虑禁用的交互
+1. 文件选择/取消选择
+2. 手动文件名编辑
+3. 文件夹切换
+4. 规则配置修改
+5. 批量删除操作
+
+## 实现检查清单
+- [ ] 识别可能影响执行的用户交互
+- [ ] 在相关函数中添加 `isExecuting` 检查
+- [ ] 应用条件样式显示禁用状态
+- [ ] 测试执行过程中的用户体验
+- [ ] 确保执行完成后状态正确重置
+
+## 相关文件
+- [src/lib/atoms/index.ts](mdc:src/lib/atoms/index.ts) - `isExecutingAtom` 定义
+- [src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 执行状态设置
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - UI禁用实现
+
+## 注意事项
+1. 确保所有可能的用户交互都被考虑
+2. 禁用状态应该有明确的视觉反馈
+3. 执行完成后必须正确重置所有状态
+4. 测试异常情况下的状态重置

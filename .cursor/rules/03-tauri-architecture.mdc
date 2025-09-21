@@ -1,0 +1,27 @@
+---
+description: Tauri架构和平台区分
+globs: src/**/*.tsx,src/**/*.ts
+---
+
+# Tauri架构和平台区分
+
+## 平台检查
+使用 `__PLATFORM__ === __PLATFORM_TAURI__` 来区分Tauri和Web平台。
+
+## 状态管理区分
+- **Tauri平台**：使用profile-based的atom，如 `getProfileFilesAtom(profileId)`
+- **Web平台**：使用全局atom，如 `filesAtom`
+
+## 关键文件
+- [src/lib/atoms](mdc:src/lib/atoms) - 状态管理定义
+- [src-tauri/src/main.rs](mdc:src-tauri/src/main.rs) - Tauri后端命令
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - Tauri专用文件面板
+
+## Tauri命令
+- `rename(old, new)` - 文件重命名
+- `read_dir(path)` - 读取目录
+- `generate_temp_filename(dir, originalName)` - 生成临时文件名
+- `get_safe_filename(dir, desiredName)` - 生成安全文件名
+
+## 重要原则
+优先修改Tauri功能，Web平台功能修改前需要确认。

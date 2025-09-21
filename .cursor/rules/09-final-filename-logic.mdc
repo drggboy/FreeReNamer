@@ -1,0 +1,64 @@
+---
+description: 最终文件名处理逻辑和手动修改优先级
+---
+
+# 最终文件名处理逻辑
+
+## 核心概念
+"手动修改"列实际上就是"最终文件名"列，它始终显示最终会被应用的文件名。
+
+## 显示逻辑
+- **如果用户没有手动修改**：显示规则预览结果
+- **如果用户手动修改了**：显示用户输入的内容
+- **原则**：该列显示什么，执行时就应用什么
+
+## 关键接口
+- `FileItemHandle.getFinalName()` - 获取最终文件名，与手动修改列显示内容一致
+- `FileItemHandle.getManualName()` - 获取用户输入的手动修改内容
+- `FileItemHandle.hasPendingRename()` - 检查是否有待执行的重命名
+
+## 实现文件
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件项组件，包含最终文件名逻辑
+- [src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 执行和冲突检测逻辑
+
+## 状态管理
+- `manualName` - 存储手动修改列显示的内容
+- `isPendingRename` - 标记是否有待执行的重命名
+- `hasChanges` - 标记是否与预览值不同
+
+## 同步逻辑
+```typescript
+// 只有在用户没有手动修改过时，才同步规则预览结果
+if (!isPendingRename) {
+  setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+}
+```
+
+## 执行逻辑
+执行重命名和冲突检测时，直接使用 `getFinalName()` 方法：
+
+```typescript
+// 简化的执行逻辑
+if (fileItemRefs) {
+  const fileRef = fileItemRefs.get(file);
+  if (fileRef?.current?.getFinalName) {
+    const finalName = fileRef.current.getFinalName();
+    if (finalName && finalName.trim()) {
+      targetName = finalName;
+    }
+  }
+}
+```
+
+## 重要原则
+1. **统一性**：执行、冲突检测、显示都使用同一套逻辑
+2. **简洁性**：避免复杂的条件判断，直接使用最终文件名
+3. **一致性**：手动修改列显示的内容必须与实际执行的内容一致
+4. **优先级**：用户手动输入始终具有最高优先级
+
+## 平台兼容性
+- **Tauri平台**：已完全实现最终文件名逻辑
+- **Web平台**：待优化，目前仍使用旧的复杂判断逻辑
+
+## UI标识
+列标题使用"最终文件名"而非"手动修改"，更准确地反映其作用。

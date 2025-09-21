@@ -1,0 +1,31 @@
+---
+description: 规则系统和文件重命名规则
+globs: src/lib/rules/**/*.ts,src/components/rule/**/*.tsx
+---
+
+# 规则系统和文件重命名规则
+
+## 规则执行
+- [src/lib/rule.ts](mdc:src/lib/rule.ts) - 规则执行引擎
+- `execRules(rules, args)` - 递归执行规则链
+- `execRule(rule, args)` - 执行单个规则
+
+## 规则定义
+- [src/lib/rules/](mdc:src/lib/rules/) - 各种规则实现
+- 每个规则都有 `type`, `label`, `exec` 等属性
+- 规则按配置中的顺序依次执行
+
+## 重要规则类型
+- **列表映射规则** - `src/lib/rules/map.ts` - 按显示顺序映射文件名
+- **其他规则** - 各种文件名变换规则
+
+## 规则执行上下文
+```typescript
+interface ExecRuleArgs {
+  fileInfo: FileInfo;
+  index: number; // 显示顺序中的索引
+}
+```
+
+## 优先级
+手动修改 > 规则重命名。如果文件有手动修改，则不应用规则重命名。

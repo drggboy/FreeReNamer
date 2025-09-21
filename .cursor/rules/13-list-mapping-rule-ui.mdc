@@ -1,0 +1,79 @@
+---
+description: 列表映射规则UI组件和模板管理
+globs: src/components/rule/rule-*map*.tsx,src/components/rule/rule-item.tsx
+---
+# 列表映射规则UI组件和模板管理
+
+## 核心组件
+
+### 规则项显示 - RuleItem
+- **文件**: [src/components/rule/rule-item.tsx](mdc:src/components/rule/rule-item.tsx)
+- **功能**: 显示规则项，包含模板信息展示
+- **模板信息**: 通过Badge组件显示模板名称和项目数量
+- **布局**: 模板信息与说明文字在同一行显示，使用`flex items-center gap-2`
+
+### 列表映射表单 - RuleMapForm  
+- **文件**: [src/components/rule/rule-type-froms/rule-map-form.tsx](mdc:src/components/rule/rule-type-froms/rule-map-form.tsx)
+- **功能**: 基础的列表映射规则配置界面
+- **特性**: 支持多列表配置、列表切换、重命名
+
+### 二次编辑对话框 - RuleMapSecondaryEditDialog
+- **文件**: [src/components/rule/rule-map-secondary-edit-dialog.tsx](mdc:src/components/rule/rule-map-secondary-edit-dialog.tsx) 
+- **功能**: 高级模板编辑界面，支持模板切换和内容编辑
+- **核心特性**:
+  - 模板选择器：允许切换不同的全局模板
+  - 实时编辑：左侧文本编辑，右侧预览
+  - 保存选项：覆盖模板/保存实例/新建模板
+
+## 右键菜单规则
+
+### 列表映射规则专用菜单
+- **编辑**: 打开二次编辑对话框（onSecondaryEdit）
+- **重命名**: 重命名规则实例（onRename）
+- **删除**: 删除规则
+
+### 其他规则通用菜单
+- **编辑**: 打开基础编辑对话框（onEdit）
+- **重命名**: 重命名规则实例
+- **删除**: 删除规则
+
+## 模板管理逻辑
+
+### 全局模板vs规则实例
+- **全局模板**: 存储在全局配置中，被多个规则实例共享
+- **规则实例**: 引用全局模板，可以有自己的修改副本
+- **数据隔离**: 明确区分"修改全局模板"和"保存规则实例"
+
+### 保存操作类型
+1. **覆盖模板**: 修改会影响选择的全局模板，所有使用该模板的规则实例都会受影响
+2. **保存规则实例**: 只修改当前实例，不影响全局模板
+3. **新建模板**: 将修改内容保存为新的全局模板
+
+## UI样式规范
+
+### Badge组件使用
+```tsx
+<Badge variant="outline" className="text-xs">
+  模板: {templateName}
+</Badge>
+<Badge variant="secondary" className="text-xs">
+  {itemCount} 项
+</Badge>
+```
+
+### 布局要求
+- 模板信息与说明文字保持在同一行
+- 使用`flex items-center gap-2 flex-wrap`确保响应式布局
+- Badge导入路径使用绝对路径：`@/components/ui/badge`
+
+## 状态管理要点
+
+### 模板选择状态
+- `globalTemplates`: 全局模板列表
+- `selectedTemplateIndex`: 当前选择的模板索引
+- 模板切换时自动更新编辑器内容
+
+### 数据同步
+- 模板切换时更新`textContent`、`previewItems`、`itemIds`
+- 保存时根据操作类型更新相应的数据结构
+- 确保规则实例名称与选择的模板名称同步
