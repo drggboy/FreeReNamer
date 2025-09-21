@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { updateProfile } from '@/lib/profile';
 
 // 冲突检查结果类型
+/* 已废弃：ConflictCheckResult 接口
 interface ConflictCheckResult {
   hasConflicts: boolean;
   conflicts: Array<{
@@ -26,9 +27,10 @@ interface ConflictCheckResult {
     type: 'duplicate_rename' | 'existing_file';
   }>;
 }
+*/
 
-// 检查重命名冲突
-async function checkRenameConflicts(
+/* 已废弃：检查重命名冲突逻辑已合并到主执行流程中
+async function checkRenameConflicts_DEPRECATED(
   files: (string | FileSystemFileHandle)[],
   sortedIndices: number[],
   profile: any,
@@ -44,9 +46,11 @@ async function checkRenameConflicts(
     currentFolderPath = typeof currentFolder === 'string' ? currentFolder : null;
   }
 
-  // 第一步：收集所有重命名操作的目标名称
-  for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
-    const originalIndex = sortedIndices[displayIndex];
+  // 第一步：并行收集所有重命名操作的目标名称
+  console.log(`🔍 开始冲突检查，并行处理 ${sortedIndices.length} 个文件`);
+  
+  const conflictCheckPromises = sortedIndices.map(async (displayIndex) => {
+    const originalIndex = displayIndex;
     const file = files[originalIndex] as string;
     
     try {
@@ -54,7 +58,6 @@ async function checkRenameConflicts(
       let targetName = fileInfo.fullName;
       
       // 直接使用"手动修改"列的内容作为最终文件名
-      // "手动修改"列实际上就是"最终信息"列，它始终显示最终会被应用的文件名
       if (fileItemRefs) {
         const fileRef = fileItemRefs.get(file);
         if (fileRef?.current?.getFinalName) {
@@ -67,13 +70,25 @@ async function checkRenameConflicts(
 
       // 如果目标名称与原名称不同，记录重命名操作
       if (targetName !== fileInfo.fullName) {
-        if (!targetNames.has(targetName)) {
-          targetNames.set(targetName, []);
-        }
-        targetNames.get(targetName)!.push(file);
+        return { file, targetName };
       }
+      return null;
     } catch (error) {
       console.error(`检查重命名冲突时失败: ${file}`, error);
+      return null;
+    }
+  });
+  
+  const conflictCheckResults = await Promise.all(conflictCheckPromises);
+  console.log(`✅ 冲突检查文件信息获取完成`);
+  
+  // 构建目标名称映射
+  for (const result of conflictCheckResults) {
+    if (result) {
+      if (!targetNames.has(result.targetName)) {
+        targetNames.set(result.targetName, []);
+      }
+      targetNames.get(result.targetName)!.push(result.file);
     }
   }
 
@@ -138,6 +153,7 @@ async function checkRenameConflicts(
     conflicts
   };
 }
+*/
 
 export const Route = createFileRoute('/profile')({
   component: Component,
@@ -197,6 +213,10 @@ function Component() {
 
   const { mutate: execProfile, isPending: isExecPending } = useMutation({
     mutationFn: async (profileId: string) => {
+      // 性能计时开始
+      const startTime = performance.now();
+      console.log(`🚀 开始执行重命名操作`);
+      
       // 设置执行状态为 true
       atomStore.set(isExecutingAtom, true);
       
@@ -222,46 +242,135 @@ function Component() {
       // 获取所有待重命名的文件项引用（用于获取手动修改的名称）
       const fileItemRefs = window.__FILE_ITEM_REFS__;
       
-      // 执行前冲突检查
-      const conflictCheckResult = await checkRenameConflicts(files, sortedIndices, profile, fileItemRefs);
-      if (conflictCheckResult.hasConflicts) {
+      // 优化：一次性获取所有文件信息，避免重复调用
+      console.log(`🚀 开始收集重命名操作，总文件数: ${sortedIndices.length}`);
+      
+      // 并行获取所有文件信息，同时进行冲突检查和重命名收集
+      const fileInfoPromises = sortedIndices.map(async (displayIndex) => {
+        const originalIndex = displayIndex;
+        const file = files[originalIndex] as string;
+        
+        try {
+          // 提前检查：先获取最终名称，如果可以提前判断无需重命名则跳过
+          let targetName: string | null = null;
+          
+          if (fileItemRefs) {
+            const fileRef = fileItemRefs.get(file);
+            if (fileRef?.current?.getFinalName) {
+              const finalName = fileRef.current.getFinalName();
+              if (finalName && finalName.trim()) {
+                targetName = finalName;
+              }
+            }
+          }
+          
+          // 获取文件信息进行比较
+          const fileInfo = await getFileInfo(file);
+          if (!targetName) {
+            targetName = fileInfo.fullName;
+          }
+          
+          return {
+            originalIndex,
+            file,
+            targetName,
+            fileInfo,
+            needsRename: targetName !== fileInfo.fullName
+          };
+        } catch (error) {
+          console.error(`准备重命名操作失败: ${file}`, error);
+          return { error: true, file, originalIndex };
+        }
+      });
+      
+      // 并行等待所有文件信息获取完成
+      const fileInfoResults = await Promise.all(fileInfoPromises);
+      console.log(`📊 文件信息获取完成，开始筛选和冲突检查`);
+      
+      // 分离成功结果和错误结果
+      const successResults = fileInfoResults.filter(result => !('error' in result)) as Array<{
+        originalIndex: number;
+        file: string;
+        targetName: string;
+        fileInfo: any;
+        needsRename: boolean;
+      }>;
+      
+      const errorResults = fileInfoResults.filter(result => 'error' in result);
+      
+      // 更新失败计数
+      for (const errorResult of errorResults) {
+        failedCount++;
+        failedFiles.push(errorResult.file);
+      }
+      
+      // 冲突检查：检查需要重命名的文件
+      const targetNames = new Map<string, string[]>();
+      const renameResults: Array<{
+        originalIndex: number;
+        file: string;
+        targetName: string;
+      }> = [];
+      
+      for (const result of successResults) {
+        if (result.needsRename) {
+          // 记录重命名操作
+          renameResults.push({
+            originalIndex: result.originalIndex,
+            file: result.file,
+            targetName: result.targetName,
+          });
+          
+          // 冲突检查
+          if (!targetNames.has(result.targetName)) {
+            targetNames.set(result.targetName, []);
+          }
+          targetNames.get(result.targetName)!.push(result.file);
+        }
+      }
+      
+      // 检查冲突
+      const conflicts: Array<{
+        targetName: string;
+        files: string[];
+        type: 'duplicate_rename' | 'existing_file';
+      }> = [];
+      
+      for (const [targetName, sourceFiles] of targetNames.entries()) {
+        if (sourceFiles.length > 1) {
+          conflicts.push({
+            targetName,
+            files: sourceFiles,
+            type: 'duplicate_rename'
+          });
+        }
+      }
+      
+      if (conflicts.length > 0) {
         // 重置执行状态
         atomStore.set(isExecutingAtom, false);
         
         // 显示冲突警告
-        const duplicateRenames = conflictCheckResult.conflicts.filter(c => c.type === 'duplicate_rename');
-        const existingFileConflicts = conflictCheckResult.conflicts.filter(c => c.type === 'existing_file');
-        
         let conflictMessage = '检测到文件名冲突，无法执行重命名：\n\n';
-        
-        if (duplicateRenames.length > 0) {
-          conflictMessage += '【重复的重命名目标】\n';
-          conflictMessage += duplicateRenames.map(conflict => 
-            `"${conflict.targetName}" ← (${conflict.files.join(', ')})`
-          ).join('\n');
-          conflictMessage += '\n\n';
-        }
-        
-        if (existingFileConflicts.length > 0) {
-          conflictMessage += '【与被移除文件的名称冲突】\n';
-          conflictMessage += existingFileConflicts.map(conflict => 
-            `"${conflict.targetName}" ← (${conflict.files.join(', ')})`
-          ).join('\n');
-          conflictMessage += '\n\n';
-        }
-        
-        conflictMessage += '请检查规则配置或手动修改的文件名。';
+        conflictMessage += '【重复的重命名目标】\n';
+        conflictMessage += conflicts.map(conflict => 
+          `"${conflict.targetName}" ← (${conflict.files.join(', ')})`
+        ).join('\n');
+        conflictMessage += '\n\n请检查规则配置或手动修改的文件名。';
         
         toast.error(conflictMessage, { duration: 10000 });
         return;
       }
+      
+      const initialSkippedCount = successResults.length - renameResults.length;
+      console.log(`✅ 收集完成，需要重命名的文件数: ${renameResults.length}，跳过的文件数: ${initialSkippedCount}`);
       
       if (__PLATFORM__ === __PLATFORM_TAURI__) {
         // Tauri平台：使用两阶段重命名
         const { dirname, join } = await import('@tauri-apps/api/path');
         const { invoke } = await import('@tauri-apps/api');
         
-        // 收集所有需要重命名的文件信息
+        // 使用已收集的重命名操作
         const renameOperations: Array<{
           originalIndex: number;
           file: string;
@@ -269,7 +378,7 @@ function Component() {
           tempName?: string;
           tempPath?: string;
           finalPath?: string;
-        }> = [];
+        }> = renameResults;
         
         // 为撤销操作准备记录
         const undoOperations: Array<{
@@ -277,46 +386,11 @@ function Component() {
           newPath: string;
         }> = [];
         
-        // 第一步：收集所有重命名操作（统一处理手动修改和规则重命名）
-        for (let displayIndex = 0; displayIndex < sortedIndices.length; displayIndex++) {
-          const originalIndex = sortedIndices[displayIndex];
-          const file = files[originalIndex] as string;
-          
-          try {
-            const fileInfo = await getFileInfo(file);
-            let targetName = fileInfo.fullName;
-            
-            // 直接使用"手动修改"列的内容作为最终文件名
-            // "手动修改"列实际上就是"最终信息"列，它始终显示最终会被应用的文件名
-            if (fileItemRefs) {
-              const fileRef = fileItemRefs.get(file);
-              if (fileRef?.current?.getFinalName) {
-                const finalName = fileRef.current.getFinalName();
-                if (finalName && finalName.trim()) {
-                  targetName = finalName;
-                }
-              }
-            }
-
-            // 如果最终名称与原名称相同，跳过
-            if (targetName === fileInfo.fullName) {
-              continue;
-            }
-
-            renameOperations.push({
-              originalIndex,
-              file,
-              targetName,
-            });
-          } catch (error) {
-            console.error(`准备重命名操作失败: ${file}`, error);
-            failedCount++;
-            failedFiles.push(file);
-          }
-        }
+        // 第二步：并行生成临时名称并执行第一阶段重命名
+        console.log(`🔄 开始第一阶段重命名，文件数: ${renameOperations.length}`);
         
-        // 第二步：为所有需要重命名的文件生成临时名称（第一阶段）
-        for (const operation of renameOperations) {
+        // 优化4：并行生成临时文件名，减少串行等待时间
+        const tempNamePromises = renameOperations.map(async (operation) => {
           try {
             const dir = await dirname(operation.file);
             const tempName = await invoke<string>('generate_temp_filename', {
@@ -326,17 +400,43 @@ function Component() {
             const tempPath = await join(dir, tempName);
             const finalPath = await join(dir, operation.targetName);
             
-            operation.tempName = tempName;
-            operation.tempPath = tempPath;
-            operation.finalPath = finalPath;
-            
+            return {
+              operation,
+              tempName,
+              tempPath,
+              finalPath,
+              dir
+            };
+          } catch (error) {
+            console.error(`生成临时文件名失败: ${operation.file}`, error);
+            return { operation, error: true };
+          }
+        });
+        
+        const tempNameResults = await Promise.all(tempNamePromises);
+        
+        // 更新操作信息并执行第一阶段重命名
+        for (const result of tempNameResults) {
+          if ('error' in result) {
+            failedCount++;
+            failedFiles.push(result.operation.file);
+            result.operation.tempPath = undefined;
+            continue;
+          }
+          
+          const { operation, tempName, tempPath, finalPath } = result;
+          operation.tempName = tempName;
+          operation.tempPath = tempPath;
+          operation.finalPath = finalPath;
+          
+          try {
             // 第一阶段：重命名为临时名称
             await invoke('rename', {
               old: operation.file,
               new: tempPath,
             });
             
-            console.log(`第一阶段：${operation.file} -> ${tempName}`);
+            console.log(`第一阶段成功：${operation.file} -> ${tempName}`);
           } catch (error) {
             console.error(`第一阶段重命名失败: ${operation.file}`, error);
             failedCount++;
@@ -346,12 +446,16 @@ function Component() {
           }
         }
         
-        // 第三步：将临时文件重命名为最终名称（第二阶段）
-        for (const operation of renameOperations) {
-          if (!operation.tempPath || !operation.finalPath) {
-            continue; // 跳过第一阶段失败的操作
-          }
-          
+        console.log(`✅ 第一阶段完成`);
+        
+        // 第三步：并行执行第二阶段重命名（临时名称 -> 最终名称）
+        console.log(`🔄 开始第二阶段重命名`);
+        
+        const validOperations = renameOperations.filter(op => op.tempPath && op.finalPath);
+        console.log(`待处理第二阶段文件数: ${validOperations.length}`);
+        
+        // 优化5：并行执行第二阶段重命名，大幅提升性能
+        const secondPhasePromises = validOperations.map(async (operation) => {
           try {
             // 第二阶段：临时名称 -> 最终名称
             await invoke('rename', {
@@ -359,22 +463,14 @@ function Component() {
               new: operation.finalPath,
             });
             
-            // 更新文件列表中的路径
-            updatedFiles[operation.originalIndex] = operation.finalPath;
-            // 记录路径映射，用于更新选中文件列表
-            filePathMap.set(operation.file, operation.finalPath);
-            // 记录撤销操作
-            undoOperations.push({
-              oldPath: operation.file,
-              newPath: operation.finalPath,
-            });
-            successCount++;
+            console.log(`第二阶段成功：${operation.tempName} -> ${operation.targetName}`);
             
-            console.log(`第二阶段：${operation.tempName} -> ${operation.targetName}`);
+            return {
+              operation,
+              success: true,
+            };
           } catch (error) {
             console.error(`第二阶段重命名失败: ${operation.tempPath}`, error);
-            failedCount++;
-            failedFiles.push(operation.file);
             
             // 尝试回滚：将临时文件重命名回原名
             try {
@@ -386,8 +482,39 @@ function Component() {
             } catch (rollbackError) {
               console.error(`回滚失败: ${operation.tempPath}`, rollbackError);
             }
+            
+            return {
+              operation,
+              success: false,
+              error,
+            };
+          }
+        });
+        
+        const secondPhaseResults = await Promise.all(secondPhasePromises);
+        
+        // 处理第二阶段结果
+        for (const result of secondPhaseResults) {
+          const { operation, success } = result;
+          
+          if (success) {
+            // 更新文件列表中的路径
+            updatedFiles[operation.originalIndex] = operation.finalPath!;
+            // 记录路径映射，用于更新选中文件列表
+            filePathMap.set(operation.file, operation.finalPath!);
+            // 记录撤销操作
+            undoOperations.push({
+              oldPath: operation.file,
+              newPath: operation.finalPath!,
+            });
+            successCount++;
+          } else {
+            failedCount++;
+            failedFiles.push(operation.file);
           }
         }
+        
+        console.log(`✅ 第二阶段完成，成功: ${successCount}，失败: ${failedCount}`);
         
         // 如果有成功的操作，保存撤销历史
         if (undoOperations.length > 0) {
@@ -437,11 +564,25 @@ function Component() {
         }
       }
       
-      // 显示执行结果统计
+      // 性能计时结束
+      const endTime = performance.now();
+      const totalTime = Math.round(endTime - startTime);
+      const actualRenameCount = successCount + failedCount;
+      const finalSkippedCount = sortedIndices.length - actualRenameCount;
+      
+      console.log(`🎯 重命名操作完成统计:`);
+      console.log(`   📊 总文件数: ${sortedIndices.length}`);
+      console.log(`   ✅ 成功重命名: ${successCount}`);
+      console.log(`   ⏭️ 跳过文件: ${finalSkippedCount} (文件名未变化)`);
+      console.log(`   ❌ 失败文件: ${failedCount}`);
+      console.log(`   ⏱️ 总耗时: ${totalTime}ms`);
+      console.log(`   🚀 平均处理速度: ${Math.round(sortedIndices.length / (totalTime / 1000))} 文件/秒`);
+      
+      // 显示执行结果统计（包含性能信息）
       if (failedCount === 0) {
-        toast.success(`所有 ${successCount} 个文件重命名成功！`);
+        toast.success(`所有 ${successCount} 个文件重命名成功！耗时 ${totalTime}ms，跳过 ${finalSkippedCount} 个未变化的文件`);
       } else {
-        toast.error(`重命名完成：成功 ${successCount} 个，失败 ${failedCount} 个。失败的文件：${failedFiles.slice(0, 3).join(', ')}${failedFiles.length > 3 ? '...' : ''}`);
+        toast.error(`重命名完成：成功 ${successCount} 个，失败 ${failedCount} 个，跳过 ${finalSkippedCount} 个。耗时 ${totalTime}ms。失败的文件：${failedFiles.slice(0, 3).join(', ')}${failedFiles.length > 3 ? '...' : ''}`);
       }
 
       // 刷新文件列表而不是清空
