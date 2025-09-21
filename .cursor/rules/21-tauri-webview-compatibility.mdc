@@ -1,0 +1,207 @@
+---
+description: Tauri WebView兼容性问题和解决方案
+globs: src-tauri/tauri.conf.json,src/styles.css,src/main.tsx
+---
+
+# Tauri WebView兼容性指南
+
+## 核心问题
+
+Tauri应用在不同环境下使用不同的WebView引擎：
+- **开发环境**: 完整Chromium + 开发者工具
+- **生产环境**: 系统WebView (WebView2/WebKit/WebKitGTK)
+
+这导致样式渲染、JavaScript执行、CSS特性支持等方面的差异。
+
+## 关键配置文件
+
+### 1. CSP安全策略
+文件：[src-tauri/tauri.conf.json](mdc:src-tauri/tauri.conf.json)
+
+```json
+{
+  "security": {
+    "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'"
+  }
+}
+```
+
+**关键权限**：
+- `'unsafe-inline'`: 允许内联样式和脚本
+- `'unsafe-eval'`: 允许动态代码执行（某些UI库需要）
+- `blob:`: 支持动态生成的资源
+
+### 2. 样式兼容性修复
+文件：[src/styles.css](mdc:src/styles.css)
+
+#### 强制定位修复
+```css
+/* 修复WebView中定位异常的组件 */
+[data-component-that-needs-fixing] {
+  position: fixed !important;
+  /* 其他必要的强制样式 */
+}
+```
+
+#### 字体一致性
+```css
+/* 确保字体渲染一致 */
+body, html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+```
+
+## 常见兼容性问题
+
+### 1. CSS特性支持差异
+
+**问题**: 某些现代CSS特性在系统WebView中不支持
+**解决**: 使用CSS回退和特性检测
+
+```css
+/* 使用回退方案 */
+.element {
+  background: #ffffff; /* 回退 */
+  background: hsl(0 0% 100%); /* 现代语法 */
+}
+
+/* 特性检测 */
+@supports (backdrop-filter: blur(10px)) {
+  .glass-effect {
+    backdrop-filter: blur(10px);
+  }
+}
+```
+
+### 2. JavaScript API差异
+
+**问题**: 某些Web API在系统WebView中行为不同
+**解决**: 运行时检测和适配
+
+```typescript
+// 检测WebView环境
+const isWebView2 = navigator.userAgent.includes('WebView2');
+const isWebKit = navigator.userAgent.includes('AppleWebKit');
+const isTauri = typeof window !== 'undefined' && window.__TAURI_IPC__;
+
+// 环境适配
+if (isTauri && isWebView2) {
+  // WebView2特定处理
+}
+```
+
+### 3. 第三方库兼容性
+
+**问题**: 某些UI库在系统WebView中表现异常
+**解决方案优先级**:
+
+1. **CSS强制覆盖** (当前方案)
+2. **库配置调整**
+3. **替换为Headless UI库**
+4. **使用原生API**
+
+## 调试策略
+
+### 1. 开发阶段调试
+
+```typescript
+// 添加环境检测日志
+useEffect(() => {
+  if (import.meta.env.DEV) {
+    console.log('WebView Info:', {
+      userAgent: navigator.userAgent,
+      isTauri: window.__TAURI_IPC__,
+      platform: navigator.platform,
+    });
+  }
+}, []);
+```
+
+### 2. 生产环境调试
+
+由于生产环境无法使用开发者工具，建议：
+
+```typescript
+// 创建内置调试面板（仅生产环境）
+if (import.meta.env.PROD && window.__TAURI_IPC__) {
+  // 显示调试信息的UI组件
+}
+```
+
+### 3. 样式对比工具
+
+```javascript
+// 样式差异检测脚本
+function compareStyles(selector) {
+  const elements = document.querySelectorAll(selector);
+  elements.forEach((el, index) => {
+    const styles = getComputedStyle(el);
+    console.log(`Element ${index}:`, {
+      // 关键样式属性
+      position: styles.position,
+      display: styles.display,
+      backgroundColor: styles.backgroundColor,
+      // ... 其他属性
+    });
+  });
+}
+```
+
+## 最佳实践
+
+### 1. 开发流程
+1. **优先在开发环境实现功能**
+2. **定期在生产环境测试**
+3. **记录并修复兼容性问题**
+4. **建立样式回归测试**
+
+### 2. 代码组织
+```typescript
+// 创建WebView适配层
+export const webviewAdapter = {
+  showNotification: (message: string) => {
+    if (window.__TAURI_IPC__) {
+      // 使用原生通知
+      return invoke('show_notification', { message });
+    } else {
+      // 使用Web通知
+      return toast(message);
+    }
+  }
+};
+```
+
+### 3. CSS组织
+```css
+/* 基础样式 */
+.component {
+  /* 通用样式 */
+}
+
+/* WebView特定修复 */
+.tauri-production .component {
+  /* 生产环境修复 */
+}
+```
+
+## 长期解决方案
+
+### 1. 架构升级
+- 迁移到Headless UI库
+- 使用Web Components
+- 采用CSS-in-JS方案
+
+### 2. 原生集成
+- 更多使用Tauri原生API
+- 减少对Web技术的依赖
+- 提升性能和一致性
+
+### 3. 工具链改进
+- 自动化兼容性测试
+- 样式差异检测工具
+- 构建时兼容性警告
+
+## 相关资源
+- [Tauri WebView文档](https://tauri.app/v1/references/webview-versions)
+- [WebView2兼容性](https://docs.microsoft.com/en-us/microsoft-edge/webview2/)
+- [WebKit特性支持](https://webkit.org/status/)

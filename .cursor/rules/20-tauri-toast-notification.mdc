@@ -1,0 +1,165 @@
+---
+description: Tauri环境下Toast通知的样式修复和最佳实践
+globs: src/main.tsx,src/styles.css,src/**/*toast*,src/**/*notification*
+---
+
+# Tauri环境下Toast通知系统
+
+## 问题背景
+
+在Tauri应用中，开发环境和生产环境的WebView引擎不同，导致Toast通知样式不一致：
+- **开发环境**: 完整的Chromium，Toast样式正常
+- **生产环境**: 系统WebView，可能缺失默认样式或定位异常
+
+## 核心解决方案
+
+### 1. Toaster组件配置
+文件：[src/main.tsx](mdc:src/main.tsx)
+
+```tsx
+// 保持简洁的配置，避免复杂的自定义选项
+<Toaster position="top-right" richColors />
+```
+
+**避免的配置**：
+- 复杂的 toastOptions
+- 过多的自定义样式覆盖
+- expand、visibleToasts 等可能影响样式的选项
+
+### 2. CSS样式修复
+文件：[src/styles.css](mdc:src/styles.css)
+
+#### 必要的定位修复
+```css
+/* Toast 位置调整 - 避免遮挡执行按钮 */
+[data-sonner-toaster] {
+  position: fixed !important;
+  top: 60px !important;
+  right: 16px !important;
+  left: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+  max-width: 356px !important;
+  z-index: 2147483647 !important;
+}
+```
+
+#### 样式补全修复
+```css
+/* 修复 Tauri 环境下 toast 样式缺失问题 */
+[data-sonner-toast] {
+  background-color: white !important;
+  border: 1px solid hsl(214.3 31.8% 91.4%) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px hsl(206 22% 7% / 35%) !important;
+  color: hsl(222.2 84% 4.9%) !important;
+  font-size: 13px !important;
+  padding: 16px !important;
+  min-height: 48px !important;
+}
+
+/* Success toast 样式 */
+[data-sonner-toast][data-type="success"] {
+  background-color: hsl(143 85% 96%) !important;
+  border-color: hsl(145 92% 91%) !important;
+  color: hsl(140 100% 27%) !important;
+}
+
+/* Error toast 样式 */
+[data-sonner-toast][data-type="error"] {
+  background-color: hsl(0 93% 94%) !important;
+  border-color: hsl(0 93% 94%) !important;
+  color: hsl(0 84% 60%) !important;
+}
+
+/* Info toast 样式 */
+[data-sonner-toast][data-type="info"] {
+  background-color: hsl(208 100% 97%) !important;
+  border-color: hsl(221 91% 91%) !important;
+  color: hsl(224 76% 48%) !important;
+}
+```
+
+## 调试方法
+
+### 1. 样式检查脚本
+当遇到样式问题时，可以在浏览器控制台中运行：
+
+```javascript
+// 检查 Toaster 元素
+const toasterElements = document.querySelectorAll('[data-sonner-toaster]');
+console.log('Toaster元素数量:', toasterElements.length);
+
+// 检查 Toast 元素
+const toastElements = document.querySelectorAll('[data-sonner-toast]');
+console.log('Toast元素数量:', toastElements.length);
+
+// 详细样式分析
+toastElements.forEach((el, index) => {
+  const styles = getComputedStyle(el);
+  console.log(`Toast ${index} 样式:`, {
+    backgroundColor: styles.backgroundColor,
+    color: styles.color,
+    borderRadius: styles.borderRadius,
+    boxShadow: styles.boxShadow,
+    position: styles.position,
+    transform: styles.transform,
+  });
+});
+```
+
+### 2. 常见问题诊断
+
+**问题1**: Toast不显示
+- 检查 `position` 是否为 `fixed`
+- 检查 `z-index` 是否足够高
+- 检查是否被其他元素遮挡
+
+**问题2**: 样式不一致
+- 检查 `backgroundColor` 是否为透明
+- 检查 `borderRadius` 是否为 0
+- 检查 `boxShadow` 是否为 none
+
+**问题3**: 位置错误
+- 检查 `top`、`right` 属性
+- 确保 `left: auto`、`bottom: auto`
+
+## 替代方案
+
+### Tauri原生通知
+对于重要通知，建议使用Tauri原生通知API：
+
+```rust
+// src-tauri/src/main.rs
+#[tauri::command]
+fn show_notification(title: String, body: String) -> Result<(), String> {
+    tauri::api::notification::Notification::new("com.cyhuajuan.free-renamer")
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+```
+
+```typescript
+// 前端调用
+import { invoke } from '@tauri-apps/api/tauri'
+
+await invoke('show_notification', {
+  title: '执行完成',
+  body: `成功处理 ${count} 个文件`
+})
+```
+
+## 最佳实践
+
+1. **保持配置简洁**: 避免过度自定义Toaster配置
+2. **CSS强制覆盖**: 在Tauri环境中，适当使用 `!important` 确保样式生效
+3. **分类型样式**: 为不同类型的toast提供明确的视觉区分
+4. **位置固定**: 确保toast不会遮挡重要的UI元素
+5. **备用方案**: 对于关键通知，考虑使用原生通知API
+
+## 相关文件
+- [src/main.tsx](mdc:src/main.tsx) - Toaster组件配置
+- [src/styles.css](mdc:src/styles.css) - Toast样式修复
+- [src/routes/profile/route.tsx](mdc:src/routes/profile/route.tsx) - 执行完成通知调用

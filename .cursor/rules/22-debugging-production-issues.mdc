@@ -1,0 +1,306 @@
+---
+description: 生产环境问题调试方法和工具
+globs: src/**/*.tsx,src/**/*.ts
+---
+
+# 生产环境问题调试指南
+
+## 调试挑战
+
+Tauri生产环境的调试难点：
+1. **无开发者工具**: 系统WebView通常不提供开发者工具
+2. **日志不可见**: console.log输出无法直接查看
+3. **样式差异**: 渲染行为与开发环境不同
+4. **错误难追踪**: JavaScript错误不易定位
+
+## 调试工具和方法
+
+### 1. 内置调试控制台
+
+创建生产环境可用的调试面板：
+
+```typescript
+// src/components/debug/production-debugger.tsx
+export const ProductionDebugger = () => {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    // 拦截console方法
+    const originalLog = console.log;
+    console.log = (...args) => {
+      originalLog(...args);
+      setLogs(prev => [...prev, {
+        timestamp: new Date().toLocaleTimeString(),
+        level: 'log',
+        message: args.join(' ')
+      }]);
+    };
+
+    return () => {
+      console.log = originalLog;
+    };
+  }, []);
+
+  // 只在生产环境显示
+  if (!import.meta.env.PROD) return null;
+
+  return (
+    <>
+      {/* 调试按钮 */}
+      {!isVisible && (
+        <button 
+          onClick={() => setIsVisible(true)}
+          className="fixed bottom-4 right-4 z-50"
+        >
+          🐛 调试
+        </button>
+      )}
+      
+      {/* 调试面板 */}
+      {isVisible && (
+        <div className="fixed inset-4 bg-white border rounded shadow-lg z-50">
+          {/* 日志显示区域 */}
+        </div>
+      )}
+    </>
+  );
+};
+```
+
+### 2. 样式检查工具
+
+```typescript
+// 样式诊断函数
+export const diagnoseStyles = (selector: string) => {
+  const elements = document.querySelectorAll(selector);
+  const results: any[] = [];
+  
+  elements.forEach((el, index) => {
+    const styles = getComputedStyle(el);
+    results.push({
+      element: `${selector}[${index}]`,
+      styles: {
+        display: styles.display,
+        visibility: styles.visibility,
+        opacity: styles.opacity,
+        position: styles.position,
+        top: styles.top,
+        right: styles.right,
+        backgroundColor: styles.backgroundColor,
+        color: styles.color,
+        zIndex: styles.zIndex,
+      },
+      attributes: {
+        className: el.className,
+        id: el.id,
+      }
+    });
+  });
+  
+  return results;
+};
+
+// 使用示例
+const testButton = () => {
+  const toastStyles = diagnoseStyles('[data-sonner-toast]');
+  console.log('Toast样式诊断:', toastStyles);
+};
+```
+
+### 3. 错误捕获和报告
+
+```typescript
+// 全局错误处理
+export const setupErrorHandling = () => {
+  // 捕获JavaScript错误
+  window.addEventListener('error', (event) => {
+    const errorInfo = {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      error: event.error?.stack,
+      timestamp: new Date().toISOString(),
+    };
+    
+    // 存储或发送错误信息
+    console.error('Global Error:', errorInfo);
+  });
+
+  // 捕获Promise拒绝
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled Promise Rejection:', event.reason);
+  });
+};
+```
+
+### 4. 环境信息收集
+
+```typescript
+// 收集环境信息
+export const collectEnvironmentInfo = () => {
+  const info = {
+    // 基础信息
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    
+    // Tauri信息
+    isTauri: typeof window !== 'undefined' && !!window.__TAURI_IPC__,
+    
+    // 屏幕信息
+    screenWidth: screen.width,
+    screenHeight: screen.height,
+    devicePixelRatio: window.devicePixelRatio,
+    
+    // 窗口信息
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight,
+    
+    // 构建信息
+    mode: import.meta.env.MODE,
+    prod: import.meta.env.PROD,
+    dev: import.meta.env.DEV,
+  };
+  
+  console.log('Environment Info:', info);
+  return info;
+};
+```
+
+## 调试流程
+
+### 1. 问题复现
+```typescript
+// 创建问题复现工具
+export const createReproductionTest = (testName: string, testFn: () => void) => {
+  return () => {
+    console.log(`🧪 开始测试: ${testName}`);
+    try {
+      testFn();
+      console.log(`✅ 测试通过: ${testName}`);
+    } catch (error) {
+      console.error(`❌ 测试失败: ${testName}`, error);
+    }
+  };
+};
+
+// 使用示例
+const testToastDisplay = createReproductionTest('Toast显示测试', () => {
+  toast.success('测试消息');
+  
+  setTimeout(() => {
+    const toastElements = document.querySelectorAll('[data-sonner-toast]');
+    if (toastElements.length === 0) {
+      throw new Error('Toast元素未找到');
+    }
+    console.log('Toast元素已创建');
+  }, 1000);
+});
+```
+
+### 2. 数据导出
+```typescript
+// 导出调试数据
+export const exportDebugData = () => {
+  const debugData = {
+    timestamp: new Date().toISOString(),
+    environment: collectEnvironmentInfo(),
+    domSnapshot: {
+      toasterElements: diagnoseStyles('[data-sonner-toaster]'),
+      toastElements: diagnoseStyles('[data-sonner-toast]'),
+    },
+    // 其他相关数据
+  };
+  
+  // 创建下载链接
+  const blob = new Blob([JSON.stringify(debugData, null, 2)], {
+    type: 'application/json'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `debug-data-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+```
+
+## 常用调试命令
+
+### 1. DOM检查
+```javascript
+// 查找特定元素
+document.querySelectorAll('[data-sonner-toaster]')
+
+// 检查元素样式
+getComputedStyle(element)
+
+// 检查元素位置
+element.getBoundingClientRect()
+```
+
+### 2. 样式调试
+```javascript
+// 检查CSS规则
+Array.from(document.styleSheets)
+  .flatMap(sheet => Array.from(sheet.cssRules))
+  .filter(rule => rule.selectorText?.includes('sonner'))
+```
+
+### 3. 事件调试
+```javascript
+// 监听所有事件
+const events = ['click', 'mouseover', 'keydown'];
+events.forEach(event => {
+  document.addEventListener(event, (e) => {
+    console.log(`Event: ${event}`, e.target);
+  });
+});
+```
+
+## 最佳实践
+
+### 1. 调试代码管理
+- 使用环境变量控制调试功能
+- 生产环境的调试代码要易于移除
+- 避免调试代码影响性能
+
+### 2. 日志策略
+```typescript
+// 分级日志系统
+const logger = {
+  debug: (...args: any[]) => {
+    if (import.meta.env.DEV) {
+      console.log('🐛', ...args);
+    }
+  },
+  info: (...args: any[]) => {
+    console.log('ℹ️', ...args);
+  },
+  warn: (...args: any[]) => {
+    console.warn('⚠️', ...args);
+  },
+  error: (...args: any[]) => {
+    console.error('❌', ...args);
+  },
+};
+```
+
+### 3. 测试覆盖
+- 为关键功能创建生产环境测试
+- 定期在真实设备上验证
+- 建立问题反馈机制
+
+## 工具推荐
+
+1. **内置调试面板**: 自建简单的调试界面
+2. **日志收集**: 将日志发送到外部服务
+3. **错误监控**: 使用Sentry等服务
+4. **远程调试**: 通过WebSocket连接外部调试工具
+
+## 相关文件
+- 调试组件通常放在 `src/components/debug/` 目录
+- 调试工具函数放在 `src/lib/debug.ts`
+- 错误处理在 `src/lib/error-handling.ts`

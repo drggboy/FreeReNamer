@@ -11,7 +11,7 @@ const RootComponent = () => {
     // @ts-ignore
     const isTauri = typeof window !== 'undefined' && window.__TAURI_IPC__;
     
-    console.log('环境检测:', { isProduction, isTauri, willDisableContextMenu: isProduction && isTauri });
+    // 环境检测完成
     
     // 只在生产环境且为Tauri环境时禁用右键菜单
     if (isProduction && isTauri) {
@@ -21,30 +21,20 @@ const RootComponent = () => {
       const handleContextMenu = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         
-        console.log('Context menu triggered on:', {
-          tagName: target.tagName,
-          className: target.className,
-          closest_allow: target.closest('.allow-context-menu'),
-          element: target
-        });
-        
         // 检查是否在输入框等可编辑元素内
         if (target.tagName === 'INPUT' || 
             target.tagName === 'TEXTAREA' || 
             target.contentEditable === 'true') {
-          console.log('Allowing context menu for editable element');
           return true;
         }
         
         // 检查是否在有 allow-context-menu class 的元素内
         const allowedElement = target.closest('.allow-context-menu');
         if (allowedElement) {
-          console.log('Allowing context menu for .allow-context-menu element:', allowedElement);
           return true;
         }
         
         // 空白区域或其他地方，禁用默认右键菜单
-        console.log('Blocking context menu');
         e.preventDefault();
         e.stopPropagation();
         return false;

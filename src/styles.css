@@ -122,7 +122,47 @@
     }
   }
 
-  /* Toast 位置调整 - 避免遮挡执行按钮 */
+  /* Toast 位置调整 - 避免遮挡执行按钮，仅修复必要的定位问题 */
   [data-sonner-toaster] {
+    position: fixed !important;
     top: 60px !important;
+    right: 16px !important;
+    left: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    max-width: 356px !important;
+    z-index: 2147483647 !important;
+  }
+
+  /* 修复 Tauri 环境下 toast 样式缺失问题 */
+  [data-sonner-toast] {
+    background-color: white !important;
+    border: 1px solid hsl(214.3 31.8% 91.4%) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 12px hsl(206 22% 7% / 35%) !important;
+    color: hsl(222.2 84% 4.9%) !important;
+    font-size: 13px !important;
+    padding: 16px !important;
+    min-height: 48px !important;
+  }
+
+  /* Success toast 样式 */
+  [data-sonner-toast][data-type="success"] {
+    background-color: hsl(143 85% 96%) !important;
+    border-color: hsl(145 92% 91%) !important;
+    color: hsl(140 100% 27%) !important;
+  }
+
+  /* Error toast 样式 */
+  [data-sonner-toast][data-type="error"] {
+    background-color: hsl(0 93% 94%) !important;
+    border-color: hsl(0 93% 94%) !important;
+    color: hsl(0 84% 60%) !important;
+  }
+
+  /* Info toast 样式 */
+  [data-sonner-toast][data-type="info"] {
+    background-color: hsl(208 100% 97%) !important;
+    border-color: hsl(221 91% 91%) !important;
+    color: hsl(224 76% 48%) !important;
   }
