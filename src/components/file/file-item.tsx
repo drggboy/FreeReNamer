@@ -22,6 +22,7 @@ export interface FileItemHandle {
   executeRename: () => Promise<boolean>;
   hasPendingRename: () => boolean;
   getManualName: () => string;
+  getFinalName: () => string; // 获取最终的文件名（手动修改列显示的内容）
 }
 
 // 创建全局缩略图缓存对象
@@ -149,15 +150,22 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       return false;
     },
     hasPendingRename: () => isPendingRename,
-    getManualName: () => manualName
-  }), [isPendingRename, handleConfirmEdit, manualName]);
+    getManualName: () => manualName,
+    getFinalName: () => manualName || (fileItemInfo?.preview || fileItemInfo?.fileInfo.fullName || '')
+  }), [isPendingRename, handleConfirmEdit, manualName, fileItemInfo]);
 
-  // 当fileItemInfo更新时，初始化手动修改值为预览值或原文件名
+  // 手动修改列始终显示最终的文件名信息
+  // 当fileItemInfo更新时，如果用户没有手动修改过，则同步为预览值
   useEffect(() => {
     if (fileItemInfo) {
-      setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+      // 如果没有待执行的重命名（表示用户没有手动修改过），则同步为预览值
+      // 这确保手动修改列始终显示"最终"会被应用的文件名
+      if (!isPendingRename) {
+        setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+      }
+      // 如果有待执行的重命名，保持用户的手动输入不变
     }
-  }, [fileItemInfo]);
+  }, [fileItemInfo, isPendingRename]);
 
   // 手动修改输入框变化处理
   const handleManualChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

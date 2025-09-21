@@ -53,31 +53,15 @@ async function checkRenameConflicts(
       const fileInfo = await getFileInfo(file);
       let targetName = fileInfo.fullName;
       
-      // 检查手动修改
-      let hasManualRename = false;
+      // 直接使用"手动修改"列的内容作为最终文件名
+      // "手动修改"列实际上就是"最终信息"列，它始终显示最终会被应用的文件名
       if (fileItemRefs) {
         const fileRef = fileItemRefs.get(file);
-        if (fileRef?.current?.hasPendingRename && fileRef.current.hasPendingRename()) {
-          const manualName = fileRef.current.getManualName?.();
-          if (manualName && manualName.trim() && manualName !== fileInfo.fullName) {
-            targetName = manualName;
-            hasManualRename = true;
+        if (fileRef?.current?.getFinalName) {
+          const finalName = fileRef.current.getFinalName();
+          if (finalName && finalName.trim()) {
+            targetName = finalName;
           }
-        }
-      }
-      
-      // 如果没有手动修改，应用规则重命名
-      if (!hasManualRename) {
-        const ruleOutput = await execRules(
-          profile?.rules?.filter((rule: any) => rule.enabled) ?? [],
-          {
-            fileInfo,
-            index: displayIndex,
-          },
-        );
-        
-        if (ruleOutput && ruleOutput !== fileInfo.fullName) {
-          targetName = ruleOutput;
         }
       }
 
@@ -302,32 +286,15 @@ function Component() {
             const fileInfo = await getFileInfo(file);
             let targetName = fileInfo.fullName;
             
-            // 优先检查是否有手动修改
-            let hasManualRename = false;
+            // 直接使用"手动修改"列的内容作为最终文件名
+            // "手动修改"列实际上就是"最终信息"列，它始终显示最终会被应用的文件名
             if (fileItemRefs) {
               const fileRef = fileItemRefs.get(file);
-              if (fileRef?.current?.hasPendingRename && fileRef.current.hasPendingRename()) {
-                // 有手动修改，使用手动修改的名称
-                const manualName = fileRef.current.getManualName?.();
-                if (manualName && manualName.trim() && manualName !== fileInfo.fullName) {
-                  targetName = manualName;
-                  hasManualRename = true;
+              if (fileRef?.current?.getFinalName) {
+                const finalName = fileRef.current.getFinalName();
+                if (finalName && finalName.trim()) {
+                  targetName = finalName;
                 }
-              }
-            }
-            
-            // 如果没有手动修改，则应用规则重命名
-            if (!hasManualRename) {
-              const ruleOutput = await execRules(
-                profile?.rules?.filter((rule) => rule.enabled) ?? [],
-                {
-                  fileInfo,
-                  index: displayIndex,
-                },
-              );
-              
-              if (ruleOutput && ruleOutput !== fileInfo.fullName) {
-                targetName = ruleOutput;
               }
             }
 

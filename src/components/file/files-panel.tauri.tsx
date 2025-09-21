@@ -790,8 +790,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         
         <span className="flex size-full items-center px-2 relative">
           <span className="flex items-center gap-1">
-            手动修改
-            <div className="ml-1 text-xs text-neutral-500" title="点击可编辑文件名，Enter键确认，Esc键取消">(?)</div>
+            最终文件名
+            <div className="ml-1 text-xs text-neutral-500" title="显示最终会被应用的文件名。如果没有手动修改，显示规则预览结果；如果有手动修改，显示手动输入的内容。点击可编辑，Enter确认，Esc取消">(?)</div>
           </span>
           <ResizableDivider 
             className="absolute right-0 h-full"
