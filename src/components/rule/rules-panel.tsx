@@ -59,6 +59,8 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   const [nameInputDialogOpened, setNameInputDialogOpened] = useState(false);
   const [pendingRule, setPendingRule] = useState<Rule | null>(null);
   const [secondaryEditRule, setSecondaryEditRule] = useState<Rule<typeof RULE_MAP_TYPE, RuleMapInfo> | undefined>();
+  const [renameRuleDialogOpened, setRenameRuleDialogOpened] = useState(false);
+  const [targetRenameRule, setTargetRenameRule] = useState<Rule | undefined>();
 
   const { mutate: addRule } = useMutation({
     mutationFn: async (rule: Rule) => {
@@ -227,6 +229,14 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
   }
 
   /**
+   * 处理重命名
+   */
+  function handleRename(rule: Rule) {
+    setTargetRenameRule(rule);
+    setRenameRuleDialogOpened(true);
+  }
+
+  /**
    * 关闭二次编辑对话框
    */
   function onCloseSecondaryEditDialog() {
@@ -288,6 +298,19 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
     setNameInputDialogOpened(false);
   }
 
+  function onRenameConfirm(name: string) {
+    if (targetRenameRule) {
+      updateRule({ ...targetRenameRule, name });
+      setTargetRenameRule(undefined);
+    }
+    setRenameRuleDialogOpened(false);
+  }
+
+  function onRenameCancel() {
+    setTargetRenameRule(undefined);
+    setRenameRuleDialogOpened(false);
+  }
+
   useEffect(() => {
     if (!addRuleDialogOpened) {
       getRuleTypeDefaultValue(RULE_REPLACE_TYPE).then(defaultValue => {
@@ -325,6 +348,7 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
                   }
                   onEdit={() => setTargetEditRule(rule)}
                   onSecondaryEdit={() => handleSecondaryEdit(rule)}
+                  onRename={() => handleRename(rule)}
                 />
               );
             })}
@@ -366,6 +390,14 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
         defaultName={pendingRule ? getDefaultRuleName(pendingRule) : ''}
         onConfirm={onRuleNameConfirm}
         onCancel={onRuleNameCancel}
+      />
+      
+      {/* 重命名对话框 */}
+      <RuleNameInputDialog
+        open={renameRuleDialogOpened}
+        defaultName={targetRenameRule?.name || ''}
+        onConfirm={onRenameConfirm}
+        onCancel={onRenameCancel}
       />
       
       {/* 列表映射规则二次编辑对话框 */}

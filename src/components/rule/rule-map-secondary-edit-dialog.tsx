@@ -14,7 +14,7 @@ import {
   IconGripVertical
 } from '@tabler/icons-react';
 import type { Rule, RuleMapInfo, ListConfig, RULE_MAP_TYPE } from '@/lib/rules';
-import { saveGlobalMapLists } from '@/lib/rules';
+import { saveGlobalMapLists, getGlobalMapLists } from '@/lib/rules';
 import { toast } from 'sonner';
 import {
   DndContext,
@@ -164,6 +164,9 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   onOverwriteRule,
   onSaveInstanceOnly
 }) => {
+  // 获取当前规则的活动列表
+  const activeList = rule.info.lists[rule.info.activeListIndex] || { name: '', targetNames: [] };
+  
   // 编辑状态
   const [includeExt, setIncludeExt] = useState(false);
   const [textContent, setTextContent] = useState('');
@@ -172,6 +175,10 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   const [newTemplateName, setNewTemplateName] = useState('');
   const [duplicateItems, setDuplicateItems] = useState<string[]>([]);
   const [itemIds, setItemIds] = useState<string[]>([]);
+  
+  // 模板选择状态
+  const [globalTemplates, setGlobalTemplates] = useState<ListConfig[]>([]);
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
   
   // 用于同步滚动的refs
   const textEditorRef = useRef<TextEditorHandle>(null);
@@ -187,11 +194,44 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
     }
   };
 
+  /**
+   * 处理模板切换
+   */
+  const handleTemplateChange = (templateIndex: number) => {
+    if (templateIndex >= 0 && templateIndex < globalTemplates.length) {
+      setSelectedTemplateIndex(templateIndex);
+      const selectedTemplate = globalTemplates[templateIndex];
+      
+      // 更新编辑器内容
+      const items = [...selectedTemplate.targetNames];
+      const ids = items.map((_, index) => `item-${Date.now()}-${index}`);
+      setTextContent(items.join('\n'));
+      setPreviewItems(items);
+      setItemIds(ids);
+    }
+  };
+
+  // 加载全局模板
+  useEffect(() => {
+    if (open) {
+      getGlobalMapLists().then(templates => {
+        setGlobalTemplates(templates);
+        
+        // 找到当前规则使用的模板索引
+        if (rule) {
+          if (activeList) {
+            const templateIndex = templates.findIndex(template => template.name === activeList.name);
+            setSelectedTemplateIndex(templateIndex >= 0 ? templateIndex : 0);
+          }
+        }
+      });
+    }
+  }, [open, rule]);
+
   // 初始化数据
   useEffect(() => {
     if (open && rule) {
       setIncludeExt(rule.info.includeExt);
-      const activeList = rule.info.lists[rule.info.activeListIndex];
       if (activeList) {
         const items = [...activeList.targetNames];
         const ids = items.map((_, index) => `item-${Date.now()}-${index}`);
@@ -200,7 +240,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         setItemIds(ids);
       }
     }
-  }, [open, rule]);
+  }, [open, rule, activeList]);
 
   // 文本内容变化时更新预览和检查重复项
   useEffect(() => {
@@ -256,8 +296,6 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
     }
     return true;
   };
-
-  const activeList = rule?.info.lists[rule.info.activeListIndex] || { name: '', targetNames: [] };
 
   // 拖拽传感器配置
   const sensors = useSensors(
@@ -329,24 +367,6 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
   };
 
   /**
-   * 创建更新后的规则信息
-   */
-  const createUpdatedRuleInfo = (): RuleMapInfo => {
-    const updatedLists = [...rule.info.lists];
-    updatedLists[rule.info.activeListIndex] = {
-      ...activeList,
-      targetNames: previewItems
-    };
-
-    return {
-      lists: updatedLists,
-      activeListIndex: rule.info.activeListIndex,
-      includeExt
-    };
-  };
-
-
-  /**
    * 保存规则实例
    * 只更新当前规则实例，不影响全局模板
    */
@@ -363,9 +383,10 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         targetNames: [...list.targetNames]  // 深度克隆targetNames数组
       }));
       
-      // 只修改当前活动列表的内容
+      // 修改当前活动列表的内容，使用选择的模板名称
+      const selectedTemplate = globalTemplates[selectedTemplateIndex];
       clonedRuleLists[rule.info.activeListIndex] = {
-        ...activeList,
+        name: selectedTemplate?.name || activeList.name,
         targetNames: [...previewItems]  // 使用新的数组，不共享引用
       };
       
@@ -403,7 +424,7 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
 
   /**
    * 覆盖模板
-   * 更新当前规则实例并在全局列表映射规则下覆盖所使用的列表模板
+   * 更新当前规则实例并在全局列表映射规则下覆盖所选择的列表模板
    */
   const handleOverwrite = async () => {
     // 先校验重复项
@@ -412,7 +433,25 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
     }
     
     try {
-      const updatedRuleInfo = createUpdatedRuleInfo();
+      const selectedTemplate = globalTemplates[selectedTemplateIndex];
+      if (!selectedTemplate) {
+        console.error('没有选择有效的模板');
+        return;
+      }
+
+      // 更新规则实例，使用选择的模板
+      const updatedRuleLists = [...rule.info.lists];
+      updatedRuleLists[rule.info.activeListIndex] = {
+        name: selectedTemplate.name,
+        targetNames: previewItems
+      };
+      
+      const updatedRuleInfo: RuleMapInfo = {
+        lists: updatedRuleLists,
+        activeListIndex: rule.info.activeListIndex,
+        includeExt
+      };
+      
       const updatedRule: Rule<typeof RULE_MAP_TYPE, RuleMapInfo> = {
         ...rule,
         info: updatedRuleInfo
@@ -421,18 +460,14 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       console.log('覆盖模板:', {
         originalRule: rule,
         updatedRule,
-        activeListName: activeList.name,
+        selectedTemplateName: selectedTemplate.name,
         newTargetNames: previewItems
       });
 
-      // 获取当前的全局模板配置
-      const { getGlobalMapLists } = await import('@/lib/rules');
-      const currentGlobalTemplates = await getGlobalMapLists();
-      
-      // 查找并覆盖当前使用的模板
-      const updatedGlobalTemplates = currentGlobalTemplates.map(template => {
-        if (template.name === activeList.name) {
-          // 覆盖当前使用的模板
+      // 获取当前的全局模板配置并覆盖选择的模板
+      const updatedGlobalTemplates = globalTemplates.map((template, index) => {
+        if (index === selectedTemplateIndex) {
+          // 覆盖选择的模板
           return {
             ...template,
             targetNames: previewItems
@@ -442,20 +477,23 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       });
       
       console.log('覆盖全局模板:', {
-        originalTemplates: currentGlobalTemplates,
+        originalTemplates: globalTemplates,
         updatedTemplates: updatedGlobalTemplates,
-        targetTemplateName: activeList.name
+        targetTemplateIndex: selectedTemplateIndex,
+        targetTemplateName: selectedTemplate.name
       });
       
       // 更新全局模板配置（覆盖指定模板）
       await saveGlobalMapLists(updatedGlobalTemplates);
       
       console.log('全局模板配置已更新');
+      toast.success(`已覆盖模板 "${selectedTemplate.name}"`);
 
       onOverwriteRule(updatedRule);
       onOpenChange(false);
     } catch (error) {
       console.error('覆盖模板失败:', error);
+      toast.error('覆盖模板失败');
     }
   };
 
@@ -463,7 +501,8 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
    * 开始重命名流程，准备另存为新规则模板
    */
   const handleStartSaveAsNewTemplate = () => {
-    setNewTemplateName(`${activeList.name} - 副本`);
+    const selectedTemplate = globalTemplates[selectedTemplateIndex];
+    setNewTemplateName(`${selectedTemplate?.name || '新模板'} - 副本`);
     setIsRenamingForTemplate(true);
   };
 
@@ -493,10 +532,10 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
       // 3. 将新模板添加到全局模板列表中（保持现有模板完全不变）
       const updatedGlobalTemplates = [...currentGlobalTemplates, newTemplateConfig];
       
-      // 4. 更新规则实例：只修改当前活动列表的内容，不影响全局模板
+      // 4. 更新规则实例：使用新创建的模板名称
       const updatedRuleLists = [...rule.info.lists];
       updatedRuleLists[rule.info.activeListIndex] = {
-        ...activeList,
+        name: newTemplateName.trim(),
         targetNames: previewItems
       };
       
@@ -592,7 +631,32 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
         </DialogHeader>
         
         {/* 顶部选项 */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="space-y-4 mb-4">
+          {/* 模板选择器 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium">选择模板:</label>
+              <select
+                value={selectedTemplateIndex}
+                onChange={(e) => handleTemplateChange(Number(e.target.value))}
+                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {globalTemplates.map((template, index) => (
+                  <option key={index} value={index}>
+                    {template.name} ({template.targetNames.length} 项)
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* 显示当前编辑的模板名称 */}
+            <div className="text-sm text-muted-foreground">
+              正在编辑: <span className="font-medium">
+                {globalTemplates[selectedTemplateIndex]?.name || '未知模板'}
+              </span>
+            </div>
+          </div>
+
           {/* 包含扩展名选项 */}
           <div className="flex items-center space-x-2">
             <input
@@ -605,11 +669,6 @@ export const RuleMapSecondaryEditDialog: React.FC<RuleMapSecondaryEditDialogProp
             <label htmlFor="includeExt" className="text-sm font-medium">
               包含扩展名
             </label>
-          </div>
-
-          {/* 显示当前编辑的列表名称 */}
-          <div className="text-sm text-muted-foreground">
-            正在编辑: <span className="font-medium">{activeList.name}</span>
           </div>
         </div>
 
