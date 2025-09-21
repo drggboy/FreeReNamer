@@ -889,7 +889,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         </span>
       </div>
       
-      <div className="relative h-[calc(100%-6.5rem)]">
+      <div className="relative h-[calc(100%-4.5rem)]">
         <ScrollArea className="h-full w-full rounded-b border border-t-0">
           <div className="flex w-full flex-col divide-y">
             {sortedFiles.map((file, displayIndex) => {

@@ -1,0 +1,264 @@
+---
+description: 开发服务器端口冲突问题的诊断和解决方案
+---
+
+# 开发服务器端口冲突解决方案
+
+## 常见问题
+开发服务器启动时遇到"Port 1420 is already in use"错误，通常是由于之前的开发服务器进程没有正确关闭导致的。
+
+## 诊断步骤
+
+### 1. 检查端口占用情况
+```powershell
+# Windows系统
+netstat -ano | findstr :1420
+
+# 输出示例
+TCP    [::1]:1420             [::]:0                 LISTENING       15276
+```
+
+### 2. 识别占用进程
+```powershell
+# 根据PID查看进程详情
+tasklist /FI "PID eq 15276"
+
+# 输出示例
+映像名称                       PID 会话名              会话#       内存使用 
+========================= ======== ================ =========== ============
+node.exe                     15276 Console                    1    172,024 K
+```
+
+### 3. 终止占用进程
+```powershell
+# 强制终止进程
+taskkill /F /PID 15276
+
+# 成功输出
+成功: 已终止 PID 为 15276 的进程。
+```
+
+### 4. 验证端口释放
+```powershell
+# 再次检查端口状态
+netstat -ano | findstr :1420
+
+# 应该只显示TIME_WAIT状态的连接，或无输出
+TCP    [::1]:49368            [::1]:1420             TIME_WAIT       0
+```
+
+## 自动化解决脚本
+
+### Windows PowerShell脚本
+```powershell
+# kill-port-1420.ps1
+$port = 1420
+$processes = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+
+if ($processes) {
+    foreach ($process in $processes) {
+        $pid = $process.OwningProcess
+        Write-Host "Killing process $pid using port $port"
+        Stop-Process -Id $pid -Force
+    }
+    Write-Host "Port $port has been freed"
+} else {
+    Write-Host "Port $port is not in use"
+}
+```
+
+### 跨平台Node.js脚本
+```javascript
+// scripts/kill-port.js
+const { execSync } = require('child_process');
+
+const port = process.argv[2] || 1420;
+
+try {
+  if (process.platform === 'win32') {
+    // Windows
+    const result = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' });
+    const lines = result.split('\n').filter(line => line.includes('LISTENING'));
+    
+    lines.forEach(line => {
+      const pid = line.trim().split(/\s+/).pop();
+      if (pid && !isNaN(pid)) {
+        execSync(`taskkill /F /PID ${pid}`);
+        console.log(`Killed process ${pid} using port ${port}`);
+      }
+    });
+  } else {
+    // macOS/Linux
+    execSync(`lsof -ti:${port} | xargs kill -9`, { stdio: 'inherit' });
+  }
+  
+  console.log(`Port ${port} has been freed`);
+} catch (error) {
+  console.log(`Port ${port} is not in use or already freed`);
+}
+```
+
+## 预防措施
+
+### 1. 正确关闭开发服务器
+- 使用 `Ctrl+C` 而不是直接关闭终端窗口
+- 等待服务器完全关闭后再启动新的实例
+- 避免强制关闭IDE或终端
+
+### 2. 开发脚本优化
+```json
+// package.json
+{
+  "scripts": {
+    "dev": "node scripts/kill-port.js 1420 && pnpm tauri dev",
+    "dev:clean": "node scripts/kill-port.js 1420 && pnpm tauri dev",
+    "kill-port": "node scripts/kill-port.js"
+  }
+}
+```
+
+### 3. IDE配置
+- **VS Code**: 配置任务自动清理端口
+- **WebStorm**: 使用Run Configuration的Before Launch任务
+- **Cursor**: 利用任务模板自动化流程
+
+## 常见端口和服务
+
+### Tauri开发环境
+- **1420**: Vite开发服务器默认端口
+- **1421**: 备用端口（Vite自动递增）
+- **3000**: 常见的React开发服务器端口
+
+### 其他常见冲突
+- **3000**: Create React App, Next.js
+- **5173**: Vite默认端口
+- **8080**: 各种开发服务器
+- **4000**: 某些GraphQL服务器
+
+## 故障排除
+
+### 1. 进程无法终止
+```powershell
+# 使用更强制的方法
+wmic process where "PID=15276" delete
+
+# 或者重启相关服务
+net stop "Windows Audio"
+net start "Windows Audio"
+```
+
+### 2. 端口仍然显示占用
+- 等待几秒钟让系统清理TIME_WAIT连接
+- 检查是否有其他相关进程
+- 重启网络适配器或重启计算机
+
+### 3. 权限问题
+```powershell
+# 以管理员身份运行PowerShell
+Start-Process powershell -Verb runAs
+```
+
+## 监控和日志
+
+### 1. 端口监控脚本
+```javascript
+// scripts/monitor-ports.js
+const net = require('net');
+
+const checkPort = (port) => {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(port, () => {
+      server.close();
+      resolve(true); // 端口可用
+    });
+    server.on('error', () => {
+      resolve(false); // 端口被占用
+    });
+  });
+};
+
+const monitorPorts = async () => {
+  const ports = [1420, 1421, 3000, 5173];
+  
+  for (const port of ports) {
+    const available = await checkPort(port);
+    console.log(`Port ${port}: ${available ? 'Available' : 'In use'}`);
+  }
+};
+
+monitorPorts();
+```
+
+### 2. 开发环境健康检查
+```bash
+#!/bin/bash
+# scripts/dev-health-check.sh
+
+echo "🔍 Checking development environment..."
+
+# 检查Node.js版本
+echo "Node.js version: $(node --version)"
+
+# 检查pnpm版本
+echo "pnpm version: $(pnpm --version)"
+
+# 检查关键端口
+echo "Checking ports..."
+node scripts/monitor-ports.js
+
+# 检查Tauri CLI
+echo "Tauri CLI: $(tauri --version 2>/dev/null || echo 'Not installed')"
+
+echo "✅ Health check complete"
+```
+
+## 相关配置文件
+
+### Vite配置
+```typescript
+// vite.config.ts
+export default defineConfig({
+  server: {
+    port: 1420,
+    strictPort: true, // 如果端口被占用则失败，而不是自动选择其他端口
+    host: true,
+  },
+});
+```
+
+### Tauri配置
+```json
+// src-tauri/tauri.conf.json
+{
+  "build": {
+    "beforeDevCommand": "pnpm dev-in-tauri",
+    "devPath": "http://localhost:1420"
+  }
+}
+```
+
+## 最佳实践
+
+### 1. 开发流程
+1. 启动前检查端口状态
+2. 使用脚本自动清理冲突端口
+3. 正确关闭开发服务器
+4. 定期清理僵尸进程
+
+### 2. 团队协作
+- 统一使用相同的端口配置
+- 共享端口清理脚本
+- 文档化常见问题解决方案
+- 建立开发环境检查清单
+
+### 3. CI/CD集成
+- 在构建脚本中包含端口检查
+- 自动化测试前清理端口
+- 监控构建环境的端口使用情况
+
+## 相关文件
+- [vite.config.ts](mdc:vite.config.ts) - Vite开发服务器配置
+- [src-tauri/tauri.conf.json](mdc:src-tauri/tauri.conf.json) - Tauri配置
+- [package.json](mdc:package.json) - npm脚本配置
+- `scripts/` - 自动化脚本目录

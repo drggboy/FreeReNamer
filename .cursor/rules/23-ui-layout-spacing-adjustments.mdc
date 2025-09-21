@@ -1,0 +1,145 @@
+---
+description: UI布局间距调整的最佳实践和经验总结
+---
+
+# UI布局间距调整最佳实践
+
+## 文件面板表格间距调整
+
+### 问题描述
+文件面板下的表格与面板底部存在过多间隙，影响视觉效果和空间利用率。
+
+### 解决方案
+调整表格容器的高度计算，通过减少calc()中的减数来增加表格区域高度。
+
+### 关键修改点
+**文件位置**：
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - Tauri版本
+- [src/components/file/files-panel.web.tsx](mdc:src/components/file/files-panel.web.tsx) - Web版本
+
+**修改内容**：
+```tsx
+// 修改前
+<div className="relative h-[calc(100%-6.5rem)]">
+
+// 修改后  
+<div className="relative h-[calc(100%-6rem)]">
+```
+
+### 调整效果
+- 表格区域高度增加 **0.5rem**（约8px）
+- 表格下边框向下移动，减少底部留白
+- 更好的空间利用率和视觉协调性
+
+## 布局调整原则
+
+### 1. 一致性原则
+- **同步修改**：Tauri和Web版本必须同时调整，保持一致的用户体验
+- **相对单位**：使用rem单位确保在不同屏幕尺寸下的一致性
+- **calc()函数**：利用CSS calc()进行精确的高度计算
+
+### 2. 测试验证
+- **开发环境测试**：先在开发环境验证调整效果
+- **多分辨率测试**：确保在不同屏幕尺寸下都能正常显示
+- **功能完整性**：确保布局调整不影响滚动、交互等功能
+
+### 3. 渐进调整
+- **小幅调整**：每次调整0.5rem或更小的增量
+- **视觉验证**：通过实际使用验证调整效果
+- **用户反馈**：根据用户体验进行微调
+
+## 相关组件结构
+
+### 文件面板布局层次
+```tsx
+<div className="flex h-full w-full flex-col gap-y-2 p-2">
+  {/* 顶部操作栏 */}
+  <div className="flex items-center justify-between">
+    {/* 操作按钮 */}
+  </div>
+  
+  {/* 表格头部 */}
+  <div className="grid h-8 w-full divide-x divide-neutral-300 rounded-t border border-b-0 bg-neutral-200 text-sm">
+    {/* 列标题 */}
+  </div>
+  
+  {/* 表格内容区域 - 关键调整点 */}
+  <div className="relative h-[calc(100%-6rem)]">
+    <ScrollArea className="h-full w-full rounded-b border border-t-0">
+      {/* 文件列表 */}
+    </ScrollArea>
+  </div>
+</div>
+```
+
+### 高度计算说明
+- **100%**：使用父容器的全部高度
+- **减去固定高度**：为顶部操作栏和表格头部预留空间
+- **6rem构成**：
+  - 顶部操作栏：约2rem
+  - 表格头部：2rem (h-8)
+  - 内边距和间隙：2rem (gap-y-2 + p-2)
+
+## 常见间距调整场景
+
+### 1. 表格底部间距
+- **问题**：表格与容器底部间隙过大
+- **解决**：减少calc()中的减数值
+- **建议增量**：0.25rem - 0.5rem
+
+### 2. 侧边栏间距
+- **问题**：侧边栏内容与边界间距不当
+- **解决**：调整padding或margin值
+- **注意**：考虑滚动条占用的空间
+
+### 3. 弹窗内容间距
+- **问题**：弹窗内容与边框间距影响阅读
+- **解决**：统一使用设计系统的间距值
+- **标准**：使用Tailwind的间距标准(0.25rem的倍数)
+
+## 调试技巧
+
+### 1. 浏览器开发工具
+```css
+/* 临时调试样式 */
+.debug-spacing {
+  border: 1px solid red !important;
+  background: rgba(255, 0, 0, 0.1) !important;
+}
+```
+
+### 2. 动态调整测试
+```javascript
+// 控制台动态测试不同的高度值
+const element = document.querySelector('[class*="calc(100%-"]');
+element.style.height = 'calc(100% - 5.5rem)';
+```
+
+### 3. 响应式测试
+- 使用浏览器的设备模拟器测试不同屏幕尺寸
+- 检查在最小和最大窗口尺寸下的显示效果
+- 验证滚动行为是否正常
+
+## 注意事项
+
+### 1. 避免过度调整
+- 不要为了填满空间而牺牲内容的可读性
+- 保持适当的留白，提升用户体验
+- 考虑不同内容量下的显示效果
+
+### 2. 兼容性考虑
+- 确保调整在不同浏览器中表现一致
+- 测试在不同操作系统下的显示效果
+- 考虑高DPI屏幕的显示差异
+
+### 3. 性能影响
+- 避免频繁的DOM重排和重绘
+- 使用CSS transforms而非直接修改布局属性
+- 考虑使用CSS Grid或Flexbox优化布局计算
+
+## 相关文件
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - Tauri文件面板
+- [src/components/file/files-panel.web.tsx](mdc:src/components/file/files-panel.web.tsx) - Web文件面板
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件项组件
+- [src/styles.css](mdc:src/styles.css) - 全局样式文件
+- [tailwind.config.js](mdc:tailwind.config.js) - Tailwind配置
