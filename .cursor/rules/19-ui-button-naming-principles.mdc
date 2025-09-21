@@ -1,0 +1,87 @@
+---
+description: UI按钮命名和设计原则
+---
+
+# UI按钮命名和设计原则
+
+## 命名原则
+1. **功能导向命名**：按钮文本应直接反映其功能，避免模糊的词汇
+   - ✅ "图片查看器" - 明确表达选择图片查看器的功能
+   - ❌ "设置" - 过于宽泛，不明确具体设置什么
+
+2. **用户理解优先**：使用用户容易理解的术语
+   - ✅ "视频播放器" - 用户熟悉的概念
+   - ✅ "删除文件" - 直观的操作描述
+
+## 图标设计规范
+1. **图标与功能匹配**：
+   - `Image` 图标 → 图片相关功能
+   - `Video` 图标 → 视频相关功能
+   - `Trash2` 图标 → 删除功能
+   - `RefreshCw` 图标 → 刷新/重置功能
+
+2. **图标尺寸一致**：统一使用 `h-4 w-4` 的图标尺寸
+
+## 按钮状态设计
+1. **动态状态显示**：
+```tsx
+// 好的例子：重置列宽按钮
+{isResettingColumns ? (
+  <>
+    <Loader2 className="h-3 w-3 animate-spin" />
+    计算中...
+  </>
+) : (
+  <>
+    <RefreshCw className="h-3 w-3" />
+    重置列宽
+  </>
+)}
+```
+
+2. **清除功能集成**：
+```tsx
+// 好的例子：媒体查看器按钮
+{viewerApp && (
+  <Button
+    variant="ghost" 
+    size="sm"
+    className="h-5 px-1 py-0 text-xs"
+    onClick={(e) => {
+      e.stopPropagation();
+      clearViewer();
+    }}
+    title="清除设置"
+  >
+    ×
+  </Button>
+)}
+```
+
+## Tooltip设计
+1. **提供上下文信息**：
+   - 显示当前设置状态
+   - 解释按钮功能
+   - 提供操作指导
+
+2. **示例**：
+```tsx
+title={imageViewerApp ? `当前图片查看器: ${imageViewerApp}` : "选择图片查看器"}
+```
+
+## 布局一致性
+1. **按钮间距**：使用 `gap-1` 或 `gap-2` 保持一致间距
+2. **按钮尺寸**：统一使用 `size="sm"` 保持界面紧凑
+3. **变体选择**：工具栏按钮使用 `variant="outline"`
+
+## 相关文件
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - 主要按钮实现
+- [src/components/ui/button.tsx](mdc:src/components/ui/button.tsx) - 按钮基础组件
+
+## 重构指导
+当发现按钮命名不够直观时：
+1. 分析按钮的实际功能
+2. 从用户角度思考如何描述这个功能
+3. 选择合适的图标
+4. 更新 tooltip 文本
+5. 确保与其他按钮的一致性

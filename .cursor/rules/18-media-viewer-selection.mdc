@@ -1,0 +1,81 @@
+---
+description: 媒体查看器选择功能和文件打开逻辑
+---
+
+# 媒体查看器选择功能
+
+## 功能概述
+系统支持分别设置图片查看器和视频播放器，用户可以选择自定义的应用程序来打开对应类型的媒体文件。
+
+## 状态管理
+- `imageViewerAppAtom` - 存储图片查看器应用程序路径
+- `videoViewerAppAtom` - 存储视频播放器应用程序路径
+
+## 核心文件
+- [src/lib/atoms/index.ts](mdc:src/lib/atoms/index.ts) - 原子状态定义
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - 选择器UI组件
+- [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) - 文件打开逻辑
+
+## UI组件模式
+每个媒体查看器按钮应包含：
+```tsx
+<Button
+  size="sm"
+  variant="outline"
+  onClick={selectXxxViewer}
+  title={xxxViewerApp ? `当前xxx: ${xxxViewerApp}` : "选择xxx"}
+  className="flex items-center gap-1"
+>
+  <IconComponent className="h-4 w-4" />
+  按钮文本
+  {xxxViewerApp && (
+    <Button
+      variant="ghost" 
+      size="sm"
+      className="h-5 px-1 py-0 text-xs"
+      onClick={(e) => {
+        e.stopPropagation();
+        clearXxxViewer();
+      }}
+      title="清除xxx设置"
+    >
+      ×
+    </Button>
+  )}
+</Button>
+```
+
+## 文件选择器配置
+```tsx
+const selectedApp = await open({
+  multiple: false,
+  directory: false,
+  title: "选择xxx",
+  filters: [{
+    name: "可执行文件",
+    extensions: ["exe", "app", "bat", "cmd", "sh"]
+  }]
+});
+```
+
+## 文件打开逻辑
+在 [src/components/file/file-item.tsx](mdc:src/components/file/file-item.tsx) 的 `handleImageClick` 中：
+1. 根据文件类型（`isImage`/`isVideo`）选择对应的查看器
+2. 优先使用用户设置的自定义查看器
+3. 失败时回退到系统默认应用
+4. 支持 Tauri 和 Web 环境的差异化处理
+
+## 关键原则
+1. **按钮命名直观**：使用"图片查看器"、"视频播放器"而非"设置"
+2. **图标匹配功能**：使用 `Image` 和 `Video` 图标
+3. **状态显示**：tooltip 显示当前设置的应用程序路径
+4. **清除功能**：提供便捷的清除设置按钮
+5. **平台区分**：Web 版本功能受限，保持禁用状态
+
+## 扩展支持
+添加新的媒体类型查看器时：
+1. 在 `atoms/index.ts` 中添加对应的 atom
+2. 在 `files-panel.tauri.tsx` 中添加选择和清除函数
+3. 添加对应的 UI 按钮
+4. 在 `file-item.tsx` 中更新文件打开逻辑
+5. 确保图标和文本的一致性
