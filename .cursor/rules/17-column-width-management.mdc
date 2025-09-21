@@ -1,0 +1,95 @@
+---
+description: 列宽管理系统和智能重置逻辑
+---
+
+# 列宽管理系统
+
+## 列宽类型和限制
+
+### 列宽配置结构
+```typescript
+interface ColumnWidths {
+  checkbox: number;    // rem单位，固定列
+  index: number;       // rem单位，固定列
+  filename: number;    // 百分比，可变列
+  time: number;        // 百分比，可变列
+  thumbnail: number;   // 百分比，可变列
+  preview: number;     // fr单位，自适应列
+  manual: number;      // 百分比，可变列
+}
+```
+
+### 限制配置
+
+| 列类型 | 手动调整最小值 | 手动调整最大值 | 智能重置最小值 | 智能重置最大值 | 默认值 |
+|--------|----------------|----------------|----------------|----------------|--------|
+| **filename** | 15% | 60% | 15% | 55% | 35% |
+| **time** | 10% | 30% | 12% | 22% | 15% |
+| **manual** | 15% | 50% | 15% | 30% | 20% |
+| **thumbnail** | 10% | 40% | - | - | 15% |
+
+## 智能重置算法
+
+### 计算流程
+1. **文件名采集**：并行获取所有文件的显示名称
+2. **文本测量**：使用Canvas API精确测量最长文件名宽度
+3. **宽度计算**：转换为百分比并应用最小/最大限制
+4. **应用设置**：更新列宽配置
+
+### 关键参数
+```typescript
+const config = {
+  fontSize: 14,           // 字体大小
+  extraPadding: 40,       // 额外边距(px)
+  fontFamily: 'system-ui, -apple-system, sans-serif'
+};
+```
+
+### 性能优化特性
+- **并行处理**：所有文件信息同时获取
+- **错误恢复**：单个文件失败不影响整体计算
+- **快速回退**：异步失败时使用同步文件名提取
+
+## 用户交互模式
+
+### 手动调整
+- 拖拽分隔符实时调整列宽
+- 实时预览效果
+- 自动应用最小/最大限制
+
+### 智能重置
+- 一键计算最优列宽
+- 基于实际文件名长度
+- 显示加载状态和进度
+
+### 状态管理
+```typescript
+const [isResizing, setIsResizing] = useState(false);        // 手动调整状态
+const [isResettingColumns, setIsResettingColumns] = useState(false); // 重置状态
+const [currentWidths, setCurrentWidths] = useState<ColumnWidths>(); // 临时列宽
+```
+
+## 平台差异
+
+### Tauri平台
+- 需要通过 `getFileInfo()` 获取文件信息
+- 支持完整的文件系统访问
+- 使用profile-based状态管理
+
+### Web平台
+- 直接使用 `FileSystemFileHandle.name`
+- 受浏览器文件系统API限制
+- 使用全局状态管理
+
+## 相关文件
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - Tauri平台列宽管理
+- [src/components/file/files-panel.web.tsx](mdc:src/components/file/files-panel.web.tsx) - Web平台列宽管理
+- [src/lib/filename-width-calculator.ts](mdc:src/lib/filename-width-calculator.ts) - 列宽计算核心逻辑
+- [src/lib/atoms/index.ts](mdc:src/lib/atoms/index.ts) - 列宽状态定义
+
+## 调试技巧
+智能重置过程中的关键日志：
+- 文件处理统计
+- 最长文件名信息
+- 计算出的列宽结果
+- 性能时间测量

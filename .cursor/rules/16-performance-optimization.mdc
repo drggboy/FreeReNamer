@@ -1,0 +1,84 @@
+---
+description: 性能优化最佳实践和并行处理模式
+---
+
+# 性能优化最佳实践
+
+## 并行处理优化
+
+### 文件信息获取优化
+重置列宽功能的性能优化展示了关键的并行处理模式：
+
+```typescript
+// ❌ 避免：串行处理
+for (const file of files) {
+  const fileInfo = await getFileInfo(file); // 串行等待
+}
+
+// ✅ 推荐：并行处理
+const fileInfoPromises = files.map(async (file) => {
+  return await getFileInfo(file); // 并行执行
+});
+const results = await Promise.all(fileInfoPromises);
+```
+
+### 性能优化原则
+
+1. **并行化异步操作**
+   - 使用 `Promise.all()` 替代 `for...await` 循环
+   - 适用于独立的异步操作
+
+2. **错误处理策略**
+   - 在 `map` 内部处理个别错误
+   - 提供快速回退方案
+
+3. **性能监控**
+   - 添加详细的控制台日志
+   - 记录处理时间和文件数量
+
+## 采样策略优化
+
+### 渐进式采样
+根据性能测试结果动态调整处理策略：
+
+1. **小数据集**：处理全部数据，确保100%准确性
+2. **大数据集**：根据性能表现选择合适的采样策略
+3. **极限情况**：提供同步回退方案
+
+### 实现模式
+```typescript
+// 根据性能测试动态调整
+const shouldProcessAll = files.length <= performanceThreshold;
+const filesToProcess = shouldProcessAll ? files : smartSampling(files);
+```
+
+## 用户体验优化
+
+### 加载状态管理
+```typescript
+const [isProcessing, setIsProcessing] = useState(false);
+
+const handleOperation = async () => {
+  setIsProcessing(true);
+  try {
+    await performOperation();
+  } finally {
+    setIsProcessing(false);
+  }
+};
+```
+
+### UI状态同步
+- 禁用按钮防止重复操作
+- 显示动态加载指示器
+- 提供操作进度反馈
+
+## 相关文件
+- [src/components/file/files-panel.tauri.tsx](mdc:src/components/file/files-panel.tauri.tsx) - 重置列宽性能优化实现
+- [src/lib/filename-width-calculator.ts](mdc:src/lib/filename-width-calculator.ts) - 智能列宽计算逻辑
+
+## 测试验证
+性能优化后应验证：
+- 小文件夹（<100个文件）：响应时间 < 0.5秒
+- 中等文件夹（100-1000个文件）：响应时间 < 1秒  
+- 大文件夹（>1000个文件）：响应时间 < 2秒

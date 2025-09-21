@@ -13,19 +13,42 @@ globs: src/components/**/*.tsx
 ## 列宽管理
 - 使用 `ColumnWidths` 类型定义列宽
 - 支持拖拽调整列宽
-- 智能重置列宽功能
+- 智能重置列宽功能（并行优化）
 - 基于文件名长度自动调整
+- 动态按钮状态：加载动画 + 禁用状态
 
 ## 文件操作状态
 - `isExecuting` - 执行状态，显示加载覆盖层
 - `deleteMode` - 删除模式切换
 - `isPendingRename` - 单个文件的待重命名状态
+- `isResettingColumns` - 重置列宽状态，显示动态加载效果
 
 ## 用户交互
 - 手动编辑文件名：点击手动修改列可编辑
 - 批量操作：复选框选择文件
 - 排序：点击列标题切换排序
 - 执行：统一执行按钮处理所有重命名
+
+## 动态按钮效果
+重置列宽按钮实现模式：
+```tsx
+<Button 
+  disabled={isResettingColumns}
+  className="flex items-center gap-2"
+>
+  {isResettingColumns ? (
+    <>
+      <Loader2 className="h-3 w-3 animate-spin" />
+      计算中...
+    </>
+  ) : (
+    <>
+      <RefreshCw className="h-3 w-3" />
+      重置列宽
+    </>
+  )}
+</Button>
+```
 
 ## 响应式设计
 组件使用百分比和rem单位，支持窗口大小调整。
