@@ -77,6 +77,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
   
+  // 标记是否正在重置列宽
+  const [isResettingColumns, setIsResettingColumns] = useState(false);
+  
   // 使用ref保存容器元素，用于计算百分比宽度
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -247,6 +250,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   // 智能重置列宽：基于文件列表中的最长值计算最佳列宽
   const resetColumnWidths = useCallback(async () => {
+    setIsResettingColumns(true);
     console.log('🔧 重置列宽按钮被点击');
     console.log('当前文件数量:', files.length);
     console.log('文件列表前3个:', files.slice(0, 3));
@@ -261,6 +265,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       setColumnWidths(defaultWidths);
       console.log('❌ 重置列宽到默认值（无文件或容器宽度无效）');
       console.log('默认列宽:', defaultWidths);
+      setIsResettingColumns(false);
       return;
     }
 
@@ -269,22 +274,30 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     // 获取显示的文件名（基础名称）而不是完整路径
     try {
       const { getFileInfo } = await import('@/lib/file');
-      const displayNames: string[] = [];
       
-      // 批量获取文件的基础名称
-      for (const file of files.slice(0, 20)) { // 限制处理数量以提高性能
+      // 优化1：直接处理所有文件，获得最高准确性
+      const filesToProcess = files; // 处理所有文件
+      
+      console.log(`📊 全量处理: 总数${files.length}, 处理${filesToProcess.length}`);
+      
+      // 优化2：并行获取文件信息，避免串行等待
+      const displayNamePromises = filesToProcess.map(async (file) => {
         try {
-          const fileInfo = await getFileInfo(typeof file === 'string' ? file : file.name);
-          displayNames.push(fileInfo.fullName);
-        } catch (error) {
-          // 如果获取失败，使用文件名的最后一部分作为备选
           const fileName = typeof file === 'string' ? file : file.name;
-          const baseName = fileName.split(/[/\\]/).pop() || fileName;
-          displayNames.push(baseName);
+          const fileInfo = await getFileInfo(fileName);
+          return fileInfo.fullName;
+        } catch (error) {
+          // 快速回退：直接从路径提取文件名
+          const fileName = typeof file === 'string' ? file : file.name;
+          return fileName.split(/[/\\]/).pop() || fileName;
         }
-      }
+      });
+      
+      // 并行等待所有文件信息
+      const displayNames = await Promise.all(displayNamePromises);
       
       console.log('📁 实际显示的文件名:', displayNames.slice(0, 3));
+      console.log(`📊 并行处理完成: 获取${displayNames.length}个文件名`);
       
       // 使用智能计算函数，基于实际显示的文件名计算最佳列宽
       const smartWidths = calculateSmartColumnWidths(
@@ -295,7 +308,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           fontSize: 14,
           extraPadding: 40, // 增加padding确保有足够空间
           minWidthPercents: {
-            filename: 18,
+            filename: 15,
             time: 12,
             manual: 15
           },
@@ -312,11 +325,12 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       
       setCurrentWidths(smartWidths);
       setColumnWidths(smartWidths);
-      console.log('✅ 智能重置列宽完成，基于实际显示文件名计算');
+      console.log('✅ 智能重置列宽完成（优化版本）');
+      setIsResettingColumns(false);
     } catch (error) {
-      console.error('❌ 智能列宽计算失败，回退到简单处理:', error);
+      console.error('❌ 智能列宽计算失败，使用快速回退:', error);
       
-      // 回退方案：使用文件路径的最后一部分
+      // 优化3：快速回退方案，完全避免异步调用
       const displayNames = files.map(file => {
         const fileName = typeof file === 'string' ? file : file.name;
         return fileName.split(/[/\\]/).pop() || fileName;
@@ -329,14 +343,15 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
         {
           fontSize: 14,
           extraPadding: 40,
-          minWidthPercents: { filename: 18, time: 12, manual: 15 },
+          minWidthPercents: { filename: 15, time: 12, manual: 15 },
           maxWidthPercents: { filename: 55, time: 22, manual: 30 }
         }
       );
       
       setCurrentWidths(smartWidths);
       setColumnWidths(smartWidths);
-      console.log('✅ 智能重置列宽完成（回退方案）');
+      console.log('✅ 快速重置列宽完成（同步回退）');
+      setIsResettingColumns(false);
     }
   }, [files, getContainerWidth, setColumnWidths, currentWidths]);
 
@@ -656,13 +671,25 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             <RefreshCw className="h-4 w-4" />
             刷新
           </Button>
-          <Button
+          <Button 
             size="sm" 
             variant="outline"
             onClick={resetColumnWidths}
+            disabled={isResettingColumns}
             title="智能重置列宽：基于当前文件列表的最长值自动计算最佳列宽"
+            className="flex items-center gap-2"
           >
-            重置列宽
+            {isResettingColumns ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                计算中...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3 w-3" />
+                重置列宽
+              </>
+            )}
           </Button>
           <Button
             size="sm"
