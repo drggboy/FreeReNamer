@@ -552,8 +552,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 更改排序方式
   function changeSortType(type: FileSortType) {
-    // 如果正在调整列宽，不改变排序
-    if (isResizing) return;
+    // 如果正在调整列宽或正在执行重命名，不改变排序
+    if (isResizing || isExecuting) return;
     
     atomStore.set(getProfileFileSortConfigAtom(profileId), (prev: any) => {
       // 如果点击当前排序列，切换排序顺序
@@ -736,7 +736,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           />
         </span>
         
-        <span className="flex size-full items-center px-2 cursor-pointer relative"
+        <span className={`flex size-full items-center px-2 relative ${
+          isExecuting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+        }`}
           onClick={() => changeSortType('name')}
         >
           <span className="flex items-center gap-1">
@@ -751,7 +753,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           />
         </span>
         
-        <span className="flex size-full items-center px-2 cursor-pointer relative"
+        <span className={`flex size-full items-center px-2 relative ${
+          isExecuting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+        }`}
           onClick={() => changeSortType('time')}
         >
           <span className="flex items-center gap-1">

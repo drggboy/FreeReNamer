@@ -450,8 +450,8 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 更改排序方式
   function changeSortType(type: FileSortType) {
-    // 如果正在调整列宽，不改变排序
-    if (isResizing) return;
+    // 如果正在调整列宽或正在执行重命名，不改变排序
+    if (isResizing || isExecuting) return;
     
     atomStore.set(fileSortConfigAtom, (prev) => {
       // 如果点击当前排序列，切换排序顺序
