@@ -1,0 +1,122 @@
+---
+description: Monaco Editor生产环境修复和最佳实践
+globs: **/text-editor.tsx,**/monaco*.ts,**/monaco*.tsx
+---
+
+# Monaco Editor 生产环境修复指南
+
+本规则包含Monaco Editor在生产环境中的修复方案和最佳实践，特别针对Tauri应用程序。
+
+## 常见生产环境问题
+
+### 1. 光标可见性问题
+在生产构建中，Monaco Editor的光标可能由于主题和配置差异而不可见。
+
+**解决方案：**
+- 在编辑器选项中使用明确的光标配置：
+```typescript
+{
+  cursorStyle: 'line',
+  cursorWidth: isProdTauri ? 3 : 2, // 生产环境中使用更粗的光标
+  cursorBlinking: 'blink',
+  cursorSurroundingLines: 0,
+  cursorSurroundingLinesStyle: 'default',
+  hideCursorInOverviewRuler: false
+}
+```
+
+### 2. 滚动空白内容问题
+生产环境可能在滚动时显示空白内容，需要手动刷新。
+
+**解决方案：**
+- 添加滚动事件监听器并强制重新渲染：
+```typescript
+// 监听编辑器内部滚动
+editorRef.current.onDidScrollChange(() => {
+  if (editorRef.current) {
+    editorRef.current.render(true);
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.render(true);
+      }
+    }, 16);
+  }
+});
+
+// 监听外部容器滚动
+const container = monacoEl.current?.closest('[data-radix-scroll-area-viewport]');
+if (container) {
+  container.addEventListener('scroll', handleScrollRefresh, { passive: true });
+}
+```
+
+### 3. 生产环境CSS优化
+添加硬件加速和渲染优化：
+
+```css
+.monaco-editor .view-lines {
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.monaco-editor .monaco-scrollable-element {
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+.monaco-editor .cursor {
+  background-color: #000000 !important;
+  width: 2px !important;
+  opacity: 1 !important;
+  animation: monaco-cursor-blink 1s linear infinite !important;
+}
+```
+
+## 环境检测
+
+始终检查生产环境的Tauri应用：
+```typescript
+const isProductionTauri = () => {
+  const isProduction = import.meta.env.PROD;
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_IPC__;
+  return isProduction && isTauri;
+};
+```
+
+## 初始化最佳实践
+
+1. **预加载Monaco Editor**: 使用 [monaco-preload.ts](mdc:src/lib/monaco-preload.ts) 模式
+2. **等待DOM就绪**: 在创建编辑器前添加小延迟
+3. **强制初始渲染**: 创建后调用 `layout()` 和 `render(true)`
+4. **使用Intersection Observer**: 检测可见性变化以重新渲染
+
+## 用户选择和右键菜单
+
+在禁用右键菜单的生产构建中，确保Monaco Editor保持交互性：
+
+```css
+.disable-context-menu .monaco-editor,
+.disable-context-menu .monaco-editor * {
+  -webkit-user-select: text !important;
+  -webkit-context-menu: auto !important;
+  user-select: text !important;
+}
+```
+
+## 错误处理
+
+当Monaco失败时始终提供textarea回退：
+```typescript
+try {
+  // Monaco编辑器创建
+} catch (error) {
+  console.error('Monaco Editor failed:', error);
+  setUseFallback(true); // 切换到textarea
+}
+```
+
+## 参考实现
+
+参见 [text-editor.tsx](mdc:src/components/ui/text-editor.tsx) 了解应用了所有生产环境修复的完整实现。

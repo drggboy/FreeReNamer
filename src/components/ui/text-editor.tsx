@@ -4,6 +4,14 @@ import { isMonacoPreloaded, preloadMonacoEditor } from '@/lib/monaco-preload';
 import { IconLoader2, IconAlertCircle } from '@tabler/icons-react';
 import { Textarea } from './textarea';
 
+// 检测是否为生产环境的Tauri应用
+const isProductionTauri = () => {
+  const isProduction = import.meta.env.PROD;
+  // @ts-ignore
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_IPC__;
+  return isProduction && isTauri;
+};
+
 export interface TextEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -36,6 +44,7 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+  const renderLoopRef = useRef<number>();
 
   // 暴露编辑器方法给父组件
   useImperativeHandle(ref, () => ({
@@ -67,16 +76,22 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
       try {
         // 如果 Monaco 还没有预加载，先预加载
         if (!isMonacoPreloaded()) {
+          console.log('Monaco Editor 未预加载，开始预加载...');
           await preloadMonacoEditor();
         }
 
         if (!monacoEl.current) {
+          console.warn('Monaco 容器元素不存在，切换到fallback模式');
           setUseFallback(true);
           return;
         }
 
-        // 创建编辑器 - 使用简化但完整的配置
-        editorRef.current = monaco.editor.create(monacoEl.current, {
+        // 等待一小段时间确保DOM元素完全准备好
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // 获取生产环境特定配置
+        const isProdTauri = isProductionTauri();
+        const editorConfig: monaco.editor.IStandaloneEditorConstructionOptions = {
           value: value || '',
           language: 'plaintext',
           theme: 'vs',
@@ -96,12 +111,128 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
           glyphMargin: false,
           folding: false,
           lineDecorationsWidth: 0,
-          lineNumbersMinChars: 0
-        });
+          lineNumbersMinChars: 0,
+          // 确保光标可见性
+          cursorStyle: 'line',
+          cursorWidth: isProdTauri ? 3 : 2, // 在生产环境中使用更粗的光标
+          cursorSurroundingLines: 0,
+          cursorSurroundingLinesStyle: 'default',
+          // 强制启用光标闪烁
+          cursorBlinking: 'blink',
+          // 确保编辑器可聚焦
+          readOnly: false,
+          domReadOnly: false,
+          // 启用选择和交互
+          selectOnLineNumbers: false,
+          roundedSelection: false,
+          // 确保在生产环境下的交互性
+          contextmenu: true,
+          mouseWheelZoom: false
+        };
+
+        // 生产环境特殊配置
+        if (isProdTauri) {
+          Object.assign(editorConfig, {
+            // 在生产环境中强制一些设置
+            autoClosingBrackets: 'never' as const,
+            autoClosingQuotes: 'never' as const,
+            autoSurround: 'never' as const,
+            codeLens: false,
+            colorDecorators: false,
+            links: false,
+            // 确保渲染性能
+            renderControlCharacters: false,
+            renderWhitespace: 'none' as const,
+            renderLineHighlight: 'line' as const,
+            // 强制光标可见
+            hideCursorInOverviewRuler: false
+          });
+        }
+
+        // 创建编辑器 - 使用简化但完整的配置
+        editorRef.current = monaco.editor.create(monacoEl.current, editorConfig);
 
         setIsEditorReady(true);
+        console.log('Monaco Editor 初始化成功');
+        
+        // 确保编辑器在初始化后立即聚焦（如果需要）
+        setTimeout(() => {
+          if (editorRef.current && monacoEl.current) {
+            editorRef.current.focus();
+            
+            // 在生产环境中强制重新布局和渲染
+            if (isProdTauri) {
+              editorRef.current.layout();
+              editorRef.current.render(true);
+              
+              // 强制刷新光标位置
+              const position = editorRef.current.getPosition();
+              if (position) {
+                editorRef.current.setPosition(position);
+                editorRef.current.revealPosition(position);
+              }
+
+              // 添加滚动事件监听器来解决生产环境下的空白问题
+              const scrollListener = () => {
+                if (editorRef.current) {
+                  // 强制重新渲染可视区域
+                  editorRef.current.render(true);
+                  
+                  // 延迟一小段时间再次渲染，确保内容完全显示
+                  setTimeout(() => {
+                    if (editorRef.current) {
+                      editorRef.current.render(true);
+                    }
+                  }, 16); // 一帧的时间
+                }
+              };
+
+              // 监听滚动事件
+              editorRef.current.onDidScrollChange(scrollListener);
+              
+              // 监听内容变化事件，确保内容更新时正确渲染
+              editorRef.current.onDidChangeModelContent(() => {
+                if (editorRef.current && isProductionTauri()) {
+                  setTimeout(() => {
+                    if (editorRef.current) {
+                      editorRef.current.layout();
+                      editorRef.current.render(true);
+                    }
+                  }, 0);
+                }
+              });
+
+              // 使用Intersection Observer来检测可见性变化并触发重新渲染
+              if (monacoEl.current && 'IntersectionObserver' in window) {
+                const observer = new IntersectionObserver((entries) => {
+                  entries.forEach((entry) => {
+                    if (entry.isIntersecting && editorRef.current) {
+                      // 当编辑器进入视口时强制渲染
+                      setTimeout(() => {
+                        if (editorRef.current) {
+                          editorRef.current.layout();
+                          editorRef.current.render(true);
+                        }
+                      }, 50);
+                    }
+                  });
+                }, {
+                  threshold: 0.1, // 当10%的区域可见时触发
+                  rootMargin: '50px' // 提前50px触发
+                });
+
+                observer.observe(monacoEl.current);
+                
+                // 保存observer引用以便清理
+                (editorRef.current as any)._intersectionObserver = observer;
+              }
+            }
+          }
+        }, 100);
+        
       } catch (error) {
         console.error('初始化Monaco Editor失败:', error);
+        console.log('切换到fallback textarea模式');
         setUseFallback(true);
       }
     };
@@ -111,13 +242,57 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
     }
 
     return () => {
-      editorRef.current?.dispose();
+      // 清理渲染循环
+      if (renderLoopRef.current) {
+        cancelAnimationFrame(renderLoopRef.current);
+        renderLoopRef.current = undefined;
+      }
+      
+      // 清理编辑器和观察器
+      if (editorRef.current) {
+        // 清理Intersection Observer
+        const observer = (editorRef.current as any)._intersectionObserver;
+        if (observer) {
+          observer.disconnect();
+        }
+        
+        editorRef.current.dispose();
+        editorRef.current = undefined;
+      }
     };
   }, [useFallback]);
 
-  // 设置事件监听器 - 使用与script-form相同的模式
+        // 设置事件监听器 - 使用与script-form相同的模式
   useEffect(() => {
     if (!isEditorReady || !editorRef.current) return;
+    
+    // 在生产环境中添加额外的滚动处理
+    if (isProductionTauri()) {
+      const handleWindowScroll = () => {
+        if (editorRef.current) {
+          // 使用防抖来避免过多的渲染调用
+          clearTimeout((window as any)._monacoScrollTimeout);
+          (window as any)._monacoScrollTimeout = setTimeout(() => {
+            if (editorRef.current) {
+              editorRef.current.render(true);
+            }
+          }, 50);
+        }
+      };
+
+      // 监听容器的滚动事件
+      const container = monacoEl.current?.closest('[data-radix-scroll-area-viewport]') || 
+                       monacoEl.current?.closest('.overflow-auto') ||
+                       document.body;
+      
+      if (container) {
+        container.addEventListener('scroll', handleWindowScroll, { passive: true });
+        
+        // 保存引用以便清理
+        (editorRef.current as any)._scrollContainer = container;
+        (editorRef.current as any)._scrollHandler = handleWindowScroll;
+      }
+    }
 
     // 内容变化监听器
     const contentListener = editorRef.current.onDidChangeModelContent(() => {
@@ -136,6 +311,20 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
     return () => {
       contentListener?.dispose();
       scrollListener?.dispose();
+      
+      // 清理滚动事件监听器
+      if (editorRef.current) {
+        const container = (editorRef.current as any)._scrollContainer;
+        const handler = (editorRef.current as any)._scrollHandler;
+        if (container && handler) {
+          container.removeEventListener('scroll', handler);
+        }
+      }
+      
+      // 清理防抖定时器
+      if ((window as any)._monacoScrollTimeout) {
+        clearTimeout((window as any)._monacoScrollTimeout);
+      }
     };
   }, [isEditorReady, onChange, onScroll]);
 
@@ -202,8 +391,12 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
         className="w-full h-full overflow-hidden"
         style={{ 
           visibility: isEditorReady ? 'visible' : 'hidden',
-          height: isEditorReady ? '100%' : '0',
-          minHeight: style.minHeight || '200px'
+          opacity: isEditorReady ? 1 : 0,
+          height: '100%',
+          minHeight: style.minHeight || '200px',
+          // 确保在生产环境下容器可见
+          backgroundColor: isEditorReady ? 'transparent' : '#ffffff',
+          transition: 'opacity 0.2s ease-in-out'
         }}
       />
     </div>

@@ -21,38 +21,57 @@ export function preloadMonacoEditor(): Promise<void> {
     return preloadPromise;
   }
 
-  preloadPromise = new Promise((resolve) => {
-    // 创建一个隐藏的容器元素
-    const hiddenContainer = document.createElement('div');
-    hiddenContainer.style.position = 'absolute';
-    hiddenContainer.style.top = '-9999px';
-    hiddenContainer.style.left = '-9999px';
-    hiddenContainer.style.width = '1px';
-    hiddenContainer.style.height = '1px';
-    hiddenContainer.style.visibility = 'hidden';
-    document.body.appendChild(hiddenContainer);
+  preloadPromise = new Promise((resolve, reject) => {
+    try {
+      // 创建一个隐藏的容器元素
+      const hiddenContainer = document.createElement('div');
+      hiddenContainer.style.position = 'absolute';
+      hiddenContainer.style.top = '-9999px';
+      hiddenContainer.style.left = '-9999px';
+      hiddenContainer.style.width = '100px';
+      hiddenContainer.style.height = '100px';
+      hiddenContainer.style.visibility = 'hidden';
+      hiddenContainer.style.pointerEvents = 'none';
+      document.body.appendChild(hiddenContainer);
 
-    // 创建一个临时编辑器来触发 Monaco 的初始化
-    const tempEditor = monaco.editor.create(hiddenContainer, {
-      value: '// Monaco Editor 预加载中...',
-      language: 'javascript',
-      theme: 'vs-dark',
-      automaticLayout: false,
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      wordWrap: 'on',
-    });
+      // 创建一个临时编辑器来触发 Monaco 的初始化
+      const tempEditor = monaco.editor.create(hiddenContainer, {
+        value: '// Monaco Editor 预加载中...',
+        language: 'plaintext',
+        theme: 'vs',
+        automaticLayout: false,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        wordWrap: 'off',
+        // 确保光标可见性配置
+        cursorStyle: 'line',
+        cursorWidth: 2,
+        cursorBlinking: 'blink',
+        readOnly: false,
+        contextmenu: false
+      });
 
-    // 等待编辑器完全初始化
-    setTimeout(() => {
-      // 清理临时编辑器
-      tempEditor.dispose();
-      document.body.removeChild(hiddenContainer);
-      
-      isPreloaded = true;
-      console.log('Monaco Editor 预加载完成');
-      resolve();
-    }, 100);
+      // 等待编辑器完全初始化
+      setTimeout(() => {
+        try {
+          // 清理临时编辑器
+          tempEditor.dispose();
+          document.body.removeChild(hiddenContainer);
+          
+          isPreloaded = true;
+          console.log('Monaco Editor 预加载完成');
+          resolve();
+        } catch (cleanupError) {
+          console.warn('Monaco Editor 预加载清理时出现警告:', cleanupError);
+          isPreloaded = true;
+          resolve(); // 即使清理失败也标记为成功
+        }
+      }, 200); // 增加等待时间以确保完全初始化
+    } catch (error) {
+      console.error('Monaco Editor 预加载失败:', error);
+      preloadPromise = null; // 重置以允许重试
+      reject(error);
+    }
   });
 
   return preloadPromise;

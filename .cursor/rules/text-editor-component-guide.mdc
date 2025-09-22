@@ -1,0 +1,151 @@
+---
+description: TextEditor组件使用和实现指南
+globs: **/text-editor.tsx,**/list-edit-dialog.tsx,**/rule-map-secondary-edit-dialog.tsx
+---
+
+# TextEditor 组件实现指南
+
+本规则提供在FreeRenamer应用程序中实现和使用自定义TextEditor组件的指南。
+
+## 组件概述
+
+TextEditor组件 ([text-editor.tsx](mdc:src/components/ui/text-editor.tsx)) 是Monaco Editor的包装器，具有textarea回退功能，专为文件名列表编辑而设计。
+
+## 主要特性
+
+1. **Monaco Editor集成**: 支持多光标的高级编辑功能
+2. **回退支持**: 如果Monaco失败自动回退到textarea
+3. **生产环境优化**: 对Tauri生产构建的特殊处理
+4. **同步滚动**: 与自定义行号显示配合工作
+
+## 使用模式
+
+### 基本实现
+```tsx
+<TextEditor
+  ref={textEditorRef}
+  value={textContent}
+  onChange={setTextContent}
+  onScroll={handleEditorScroll}
+  placeholder="请输入文件名，每行一个"
+  className="flex-1 border-none rounded-none"
+  style={{ 
+    minHeight: '200px',
+    height: '100%'
+  }}
+/>
+```
+
+### 配合行号显示
+该组件设计用于与外部行号配合使用：
+
+```tsx
+<div className="flex-1 flex bg-background border rounded-md overflow-hidden">
+  {/* 行号区域 */}
+  <div 
+    ref={lineNumbersRef}
+    className="bg-muted/30 border-r px-3 py-2 text-right text-sm font-mono text-muted-foreground select-none min-w-[3rem] shrink-0 overflow-hidden flex flex-col"
+  >
+    {textContent.split('\n').map((_, index) => (
+      <div key={index} className="leading-6 h-6 shrink-0">
+        {index + 1}
+      </div>
+    ))}
+  </div>
+  
+  {/* 文本编辑器 */}
+  <TextEditor ... />
+</div>
+```
+
+## 滚动同步
+
+实现行号和编辑器之间的滚动同步：
+
+```tsx
+const handleEditorScroll = () => {
+  if (textEditorRef.current && lineNumbersRef.current) {
+    const scrollTop = textEditorRef.current.getScrollTop();
+    lineNumbersRef.current.scrollTop = scrollTop;
+  }
+};
+```
+
+## 多光标支持
+
+编辑器支持Ctrl+Shift+Click进行多光标编辑。这在UI中有提示：
+
+```tsx
+<span className="ml-2 text-xs text-muted-foreground font-normal">
+  支持多光标编辑：Ctrl+Shift+鼠标点击
+</span>
+```
+
+## 生产环境注意事项
+
+### 错误处理
+如果Monaco Editor加载失败，组件会自动回退到textarea：
+
+```tsx
+if (useFallback) {
+  return (
+    <div className={`w-full h-full flex flex-col ${className}`}>
+      <div className="flex items-center gap-2 text-amber-600 text-xs mb-2">
+        <IconAlertCircle className="h-3 w-3" />
+        <span>编辑器加载失败，已切换到基础模式（不支持多光标编辑）</span>
+      </div>
+      <Textarea ... />
+    </div>
+  );
+}
+```
+
+### 性能优化
+- 自动布局调整
+- 生产环境中强制渲染
+- 通过CSS实现硬件加速
+- 使用Intersection Observer检测可见性
+
+## 集成示例
+
+### 列表编辑对话框
+参见 [list-edit-dialog.tsx](mdc:src/components/rule/list-edit-dialog.tsx) 了解完整集成示例，包含：
+- 预览面板同步
+- 重复项检测
+- 拖放重新排序
+
+### 规则映射次级编辑对话框
+参见 [rule-map-secondary-edit-dialog.tsx](mdc:src/components/rule/rule-map-secondary-edit-dialog.tsx) 了解另一种实现模式。
+
+## 常见问题和解决方案
+
+### 1. 生产环境中光标不可见
+- 确保正确的主题配置
+- 使用生产环境特定的光标设置
+- 添加CSS光标样式
+
+### 2. 滚动同步问题
+- 实现正确的滚动事件处理
+- 使用refs进行直接DOM操作
+- 添加防抖以提升性能
+
+### 3. 内容不更新
+- 检查value属性同步
+- 确保正确的useEffect依赖项
+- 必要时强制重新渲染
+
+## 最佳实践
+
+1. **始终提供回退**: textarea回退确保即使Monaco失败组件也能工作
+2. **正确使用refs**: 通过useImperativeHandle暴露必要的方法
+3. **处理生产环境差异**: 为生产构建应用特殊配置
+4. **优化性能**: 使用适当的记忆化并避免不必要的重新渲染
+
+## 测试
+
+在开发和生产环境中测试组件：
+- Monaco Editor功能
+- 回退行为
+- 滚动同步
+- 多光标编辑
+- 负载下的性能

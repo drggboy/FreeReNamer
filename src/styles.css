@@ -71,9 +71,12 @@
   /* 允许输入框和可编辑元素选择文本 */
   .disable-context-menu input, 
   .disable-context-menu textarea, 
-  .disable-context-menu [contenteditable="true"] {
-    -webkit-user-select: text;
-    -webkit-context-menu: auto;
+  .disable-context-menu [contenteditable="true"],
+  .disable-context-menu .monaco-editor,
+  .disable-context-menu .monaco-editor * {
+    -webkit-user-select: text !important;
+    -webkit-context-menu: auto !important;
+    user-select: text !important;
   }
   
   /* 允许自定义右键菜单区域 */
@@ -165,4 +168,57 @@
     background-color: hsl(208 100% 97%) !important;
     border-color: hsl(221 91% 91%) !important;
     color: hsl(224 76% 48%) !important;
+  }
+
+  /* Monaco Editor 光标可见性修复 - 生产环境专用 */
+  .monaco-editor .cursor {
+    background-color: #000000 !important;
+    width: 2px !important;
+    opacity: 1 !important;
+    animation: monaco-cursor-blink 1s linear infinite !important;
+  }
+  
+  .monaco-editor .monaco-editor-background {
+    background-color: #ffffff !important;
+  }
+  
+  .monaco-editor .view-line {
+    background-color: transparent !important;
+  }
+  
+  /* 确保Monaco Editor光标闪烁动画 */
+  @keyframes monaco-cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+  
+  /* 确保Monaco Editor在生产环境下的样式重置 */
+  .monaco-editor * {
+    box-sizing: border-box !important;
+  }
+  
+  /* 确保编辑器容器正确显示 */
+  .monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+    background: rgba(100, 100, 100, 0.4) !important;
+  }
+
+  /* 生产环境滚动优化 */
+  .monaco-editor .view-lines {
+    /* 强制硬件加速 */
+    transform: translateZ(0);
+    will-change: transform;
+    /* 确保内容正确渲染 */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .monaco-editor .monaco-scrollable-element {
+    /* 改进滚动性能 */
+    contain: layout style paint;
+    transform: translateZ(0);
+  }
+
+  /* 确保视口内容正确显示 */
+  .monaco-editor .view-zone {
+    transform: translateZ(0);
   }
