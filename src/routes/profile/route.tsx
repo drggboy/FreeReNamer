@@ -2,6 +2,7 @@ import { ProfileNavList } from '@/components/profile/profile-nav-list';
 import { createFileRoute, Outlet, useParams, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useSpring, animated } from '@react-spring/web';
+import { useAtomValue } from 'jotai';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -164,6 +165,7 @@ function Component() {
   const params = useParams({ from: '/profile/$profileId' });
   const navigate = useNavigate();
   const [sidePanelOpened, setSidePanelOpened] = useState(false);
+  const isExecuting = useAtomValue(isExecutingAtom);
 
   const navStyle = useSpring({
     width: sidePanelOpened ? 240 : 0,
@@ -899,7 +901,7 @@ function Component() {
             </animated.button>
           </Button>
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleUndoClick} variant="outline">
+            <Button size="sm" onClick={handleUndoClick} variant="outline" disabled={isExecuting}>
               撤销
             </Button>
             <Button size="sm" onClick={handleExecClick} disabled={isExecPending}>
