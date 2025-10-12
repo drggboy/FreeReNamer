@@ -1,0 +1,312 @@
+---
+description: 生产环境文本选择高亮修复方案
+globs: src/styles.css,src/components/ui/text-editor.tsx
+---
+
+# 生产环境文本选择高亮修复
+
+## 问题背景
+
+在Tauri打包的生产环境中，Monaco Editor文本编辑器选中文字时缺少高亮显示效果（选择背景色），导致用户无法清楚地看到选中了哪些文字。
+
+**影响组件**:
+- [text-editor.tsx](mdc:src/components/ui/text-editor.tsx) - TextEditor组件
+- [list-edit-dialog.tsx](mdc:src/components/rule/list-edit-dialog.tsx) - 列表编辑对话框
+- [rule-map-secondary-edit-dialog.tsx](mdc:src/components/rule/rule-map-secondary-edit-dialog.tsx) - 规则映射编辑对话框
+
+## 根本原因
+
+Tauri生产环境使用系统WebView，与开发环境的Chromium引擎存在差异：
+
+1. **CSS默认样式缺失**: 系统WebView可能缺少某些默认的文本选择样式
+2. **Monaco内部样式**: Monaco Editor依赖特定的CSS类来渲染选择高亮
+3. **样式优先级问题**: 生产环境中全局样式可能影响Monaco的选择样式
+
+## 最终解决方案
+
+### JavaScript手动创建选择高亮层
+
+经过多次尝试，发现在Tauri生产环境的WebView2中：
+- ❌ CSS `::selection` 样式完全不工作
+- ❌ Monaco Editor的内置选择层无法渲染
+
+**最终采用的解决方案**：通过JavaScript监听Monaco Editor的选择变化事件，手动创建DOM元素来显示高亮。
+
+文件: [src/components/ui/text-editor.tsx](mdc:src/components/ui/text-editor.tsx)
+
+#### 核心实现
+
+```typescript
+// 在生产环境中创建自定义选择高亮层
+if (isProdTauri) {
+  // 创建overlay容器
+  const highlightOverlay = document.createElement('div');
+  highlightOverlay.style.position = 'absolute';
+  highlightOverlay.style.pointerEvents = 'none';
+  highlightOverlay.style.zIndex = '10';
+  
+  // 保存选择位置（行列号）
+  let savedSelection: { start: monaco.Position; end: monaco.Position } | null = null;
+  
+  // 更新高亮位置
+  const updateHighlightPosition = () => {
+    if (!savedSelection) return;
+    
+    // 获取滚动位置
+    const scrollTop = editorRef.current.getScrollTop();
+    const scrollLeft = editorRef.current.getScrollLeft();
+    
+    // 为每一行创建高亮div
+    for (let lineNumber = startPos.lineNumber; lineNumber <= endPos.lineNumber; lineNumber++) {
+      // 使用Monaco API精确获取列的像素位置（支持中文和变宽字体）
+      const startOffset = editorRef.current.getOffsetForColumn(lineNumber, startCol);
+      const endOffset = editorRef.current.getOffsetForColumn(lineNumber, endCol);
+      
+      const highlightDiv = document.createElement('div');
+      highlightDiv.style.top = `${lineTop - scrollTop}px`;
+      highlightDiv.style.left = `${startOffset - scrollLeft}px`;
+      highlightDiv.style.width = `${endOffset - startOffset}px`;
+      highlightDiv.style.backgroundColor = '#ADD6FF';
+      highlightDiv.style.opacity = '0.5';
+      
+      highlightOverlay.appendChild(highlightDiv);
+    }
+  };
+  
+  // 监听选择变化
+  editorRef.current.onDidChangeCursorSelection(() => {
+    savedSelection = { start, end };
+    updateHighlightPosition();
+  });
+  
+  // 监听滚动
+  editorRef.current.onDidScrollChange(() => {
+    updateHighlightPosition();
+  });
+}
+```
+
+## 修复策略说明
+
+### 1. 为什么不用CSS
+
+在Tauri生产环境的WebView2中尝试了多种CSS方案：
+- ❌ `::selection` 伪元素完全不生效
+- ❌ Monaco Editor的`.selections-layer`渲染失败
+- ❌ 即使使用`!important`强制覆盖也无效
+
+**根本原因**: WebView2对CSS选择高亮的支持存在问题。
+
+### 2. JavaScript手动渲染方案
+
+通过JavaScript监听Monaco Editor的API事件，手动创建DOM元素：
+- ✅ 完全绕过CSS限制
+- ✅ 精确控制位置和样式
+- ✅ 支持中文和变宽字体（使用Monaco的`getOffsetForColumn` API）
+- ✅ 正确处理滚动和多行选择
+
+### 3. 颜色和透明度
+
+使用 `#ADD6FF` + 50%透明度:
+- **可读性**: 淡蓝色背景不影响文字阅读
+- **视觉反馈**: 足够明显让用户知道选中了哪些内容
+- **标准体验**: 接近浏览器默认的选择高亮颜色
+
+### 4. 精确位置计算
+
+- 使用`getOffsetForColumn()`获取精确的像素位置，支持中文等宽度不同的字符
+- 减去滚动偏移量`scrollTop`和`scrollLeft`，使高亮固定在文本上
+- 保存选择的行列号而不是像素位置，滚动时只需重新计算显示位置
+
+## 测试验证
+
+### 生产环境测试步骤
+
+1. **构建生产版本**:
+   ```bash
+   pnpm tauri build
+   ```
+
+2. **运行exe文件**:
+   ```bash
+   .\src-tauri\target\release\FreeReNamer.exe
+   ```
+
+3. **打开列表映射规则编辑**:
+   - 创建或编辑列表映射规则
+   - 在文本编辑器中输入多行文本
+
+4. **测试文本选择**:
+   - 鼠标拖拽选中文字
+   - 双击选中单词
+   - Ctrl+A全选
+   - Ctrl+Shift+点击多光标选择
+
+5. **验证结果**:
+   - ✅ 选中的文字应显示淡蓝色背景（#ADD6FF，50%透明度）
+   - ✅ 文字颜色保持黑色清晰可读
+   - ✅ 选择对中文、英文、数字都精确对齐
+   - ✅ 滚动时高亮正确跟随文本移动
+   - ✅ 多行选择连续高亮
+   - ✅ 重新选择时，旧高亮消失，新高亮出现
+
+## 调试方法
+
+如果在生产环境中选择高亮仍然不显示：
+
+### 1. 样式检查脚本
+
+在开发者工具（如果可用）中运行：
+
+```javascript
+// 检查Monaco Editor元素
+const editor = document.querySelector('.monaco-editor');
+console.log('Monaco Editor存在:', !!editor);
+
+// 检查选择层元素
+const selectionLayer = document.querySelector('.monaco-editor .selections-layer');
+console.log('选择层存在:', !!selectionLayer);
+
+// 检查选择元素的样式
+const selection = document.querySelector('.monaco-editor .selections-layer .selection');
+if (selection) {
+  const styles = getComputedStyle(selection);
+  console.log('选择样式:', {
+    backgroundColor: styles.backgroundColor,
+    display: styles.display,
+    visibility: styles.visibility,
+    opacity: styles.opacity,
+  });
+}
+
+// 检查CSS规则是否加载
+const styleSheets = Array.from(document.styleSheets);
+const selectionRules = styleSheets.flatMap(sheet => {
+  try {
+    return Array.from(sheet.cssRules || []);
+  } catch (e) {
+    return [];
+  }
+}).filter(rule => 
+  rule.selectorText?.includes('selection') &&
+  rule.selectorText?.includes('monaco-editor')
+);
+console.log('Monaco选择CSS规则数量:', selectionRules.length);
+```
+
+### 2. 手动触发选择
+
+```javascript
+// 获取编辑器实例
+const monacoEditor = monaco?.editor?.getModels()?.[0];
+if (monacoEditor) {
+  // 触发选择事件
+  const range = new monaco.Range(1, 1, 1, 10);
+  // 这应该触发选择样式
+}
+```
+
+## 相关问题和解决方案
+
+### 问题1: 选择位置不精确（最后一个字符没有高亮）
+
+**原因**: 使用固定字符宽度估算位置不准确
+
+**解决**: 使用Monaco API精确计算
+```typescript
+// ❌ 错误：固定字符宽度
+const charWidth = 7.2;
+highlightDiv.style.left = `${(startCol - 1) * charWidth}px`;
+highlightDiv.style.width = `${(endCol - startCol) * charWidth}px`;
+
+// ✅ 正确：使用Monaco API
+const startOffset = editorRef.current.getOffsetForColumn(lineNumber, startCol);
+const endOffset = editorRef.current.getOffsetForColumn(lineNumber, endCol);
+highlightDiv.style.left = `${startOffset}px`;
+highlightDiv.style.width = `${endOffset - startOffset}px`;
+```
+
+### 问题2: 滚动时高亮位置不对
+
+**原因**: 没有减去滚动偏移量
+
+**解决**: 动态计算相对位置
+```typescript
+const scrollTop = editorRef.current.getScrollTop();
+const scrollLeft = editorRef.current.getScrollLeft();
+highlightDiv.style.top = `${lineTop - scrollTop}px`;
+highlightDiv.style.left = `${startOffset - scrollLeft}px`;
+```
+
+### 问题3: 中文字符高亮不准确
+
+**解决**: `getOffsetForColumn()` API自动处理不同宽度的字符，包括中文、emoji等
+
+## 最佳实践
+
+### 1. 开发流程
+
+- **优先在开发环境验证**: 确保选择功能正常
+- **定期生产环境测试**: 每次修改Monaco相关代码后测试
+- **保留调试日志**: 在关键位置添加console.log（生产环境可移除）
+
+### 2. 样式维护
+
+- **集中管理**: 所有生产环境修复都在 `src/styles.css` 中
+- **注释清晰**: 说明每个选择器的用途
+- **版本记录**: 在修复时记录相关的issue或问题描述
+
+### 3. 用户体验
+
+- **提供反馈**: 在文档中说明如果遇到问题如何反馈
+- **备用方案**: TextEditor组件有textarea回退模式
+- **测试覆盖**: 确保所有选择操作都经过测试
+
+## 限制和未来改进
+
+### 当前限制
+
+1. **固定颜色**: 选择高亮颜色不支持主题切换（硬编码为`#ADD6FF`）
+2. **只在生产环境生效**: 开发环境使用Monaco默认的选择样式
+3. **性能**: 每次选择变化都需要重新创建DOM元素（但在实际使用中性能影响可忽略）
+
+### 未来改进方向
+
+1. **主题集成**: 
+   ```css
+   /* 支持深色主题 */
+   .dark .monaco-editor ::selection {
+     background-color: rgba(51, 119, 204, 0.7) !important;
+   }
+   ```
+
+2. **动态颜色**:
+   ```typescript
+   // 从主题变量读取颜色
+   const selectionColor = getComputedStyle(document.documentElement)
+     .getPropertyValue('--selection-color');
+   ```
+
+3. **用户自定义**:
+   ```typescript
+   // 设置界面允许用户选择高亮颜色
+   interface Settings {
+     selectionHighlightColor: string;
+   }
+   ```
+
+## 相关文件
+
+- [src/styles.css](mdc:src/styles.css) - CSS修复
+- [src/components/ui/text-editor.tsx](mdc:src/components/ui/text-editor.tsx) - TextEditor组件
+- [docs/production-text-selection-fix.md](mdc:docs/production-text-selection-fix.md) - 详细文档
+- [21-tauri-webview-compatibility.mdc](mdc:.cursor/rules/21-tauri-webview-compatibility.mdc) - WebView兼容性指南
+- [tauri-production-environment.mdc](mdc:.cursor/rules/tauri-production-environment.mdc) - 生产环境指南
+
+## 相关规则
+
+参考这些规则了解更多Tauri生产环境问题：
+- **21-tauri-webview-compatibility**: WebView兼容性问题和解决方案
+- **tauri-production-environment**: Tauri生产环境注意事项
+- **monaco-editor-production-fixes**: Monaco Editor生产环境修复
+- **text-editor-component-guide**: TextEditor组件使用指南

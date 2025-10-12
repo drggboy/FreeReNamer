@@ -149,21 +149,161 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
           });
         }
 
+        // 生产环境中完全禁用Monaco的选择渲染，改用浏览器原生::selection
+        // 这样可以绕过WebView2的Monaco选择层渲染问题
+        if (isProdTauri) {
+          console.log('⚠️ 生产环境：禁用Monaco选择层，使用原生::selection');
+          // 保持使用vs主题，但我们会在CSS中覆盖选择样式
+          editorConfig.theme = 'vs';
+        } else {
+          // 开发环境使用自定义主题
+          try {
+            monaco.editor.defineTheme('custom-light', {
+              base: 'vs',
+              inherit: true,
+              rules: [],
+              colors: {
+                'editor.selectionBackground': '#80BFFF',
+                'editor.inactiveSelectionBackground': '#B3D9FF',
+                'editor.selectionHighlightBackground': '#CCE5FF',
+                'editor.lineHighlightBackground': '#F5F5F5',
+              }
+            });
+            editorConfig.theme = 'custom-light';
+            console.log('✅ Monaco自定义主题定义成功');
+          } catch (e) {
+            console.error('❌ Monaco主题定义失败:', e);
+          }
+        }
+
         // 创建编辑器 - 使用简化但完整的配置
         editorRef.current = monaco.editor.create(monacoEl.current, editorConfig);
 
+        // 强制启用文本选择功能（生产环境修复）
+        if (monacoEl.current) {
+          monacoEl.current.style.userSelect = 'text';
+          monacoEl.current.style.webkitUserSelect = 'text';
+          monacoEl.current.style.cursor = 'text';
+          
+          // 为Monaco内部元素强制启用选择
+          const viewLines = monacoEl.current.querySelector('.view-lines');
+          if (viewLines) {
+            (viewLines as HTMLElement).style.userSelect = 'text';
+            (viewLines as HTMLElement).style.webkitUserSelect = 'text';
+          }
+          
+          console.log('✅ 已强制启用Monaco Editor文本选择功能');
+        }
+
         setIsEditorReady(true);
-        console.log('Monaco Editor 初始化成功');
+        console.log('Monaco Editor 初始化成功 (使用自定义主题)');
+        
         
         // 确保编辑器在初始化后立即聚焦（如果需要）
         setTimeout(() => {
           if (editorRef.current && monacoEl.current) {
             editorRef.current.focus();
             
-            // 在生产环境中强制重新布局和渲染
+            // 在生产环境中强制重新布局和渲染，并创建自定义选择高亮
             if (isProdTauri) {
               editorRef.current.layout();
               editorRef.current.render(true);
+              
+              // 创建自定义选择高亮层（绕过WebView2的Monaco选择层渲染问题）
+              
+              const highlightOverlay = document.createElement('div');
+              highlightOverlay.style.position = 'absolute';
+              highlightOverlay.style.top = '0';
+              highlightOverlay.style.left = '0';
+              highlightOverlay.style.width = '100%';
+              highlightOverlay.style.height = '100%';
+              highlightOverlay.style.pointerEvents = 'none';
+              highlightOverlay.style.zIndex = '10';
+              highlightOverlay.className = 'custom-selection-overlay';
+              
+              const editorDom = editorRef.current.getDomNode();
+              if (editorDom) {
+                editorDom.style.position = 'relative';
+                editorDom.appendChild(highlightOverlay);
+              }
+              
+              // 保存当前选择的位置（行列号），不随滚动变化
+              let savedSelection: { start: monaco.Position; end: monaco.Position } | null = null;
+              
+              // 更新高亮位置（根据当前滚动位置）
+              const updateHighlightPosition = () => {
+                if (!editorRef.current || !savedSelection) {
+                  highlightOverlay.innerHTML = '';
+                  return;
+                }
+                
+                const model = editorRef.current.getModel();
+                if (!model) return;
+                
+                const startPos = savedSelection.start;
+                const endPos = savedSelection.end;
+                
+                highlightOverlay.innerHTML = '';
+                
+                // 获取当前滚动位置
+                const scrollTop = editorRef.current.getScrollTop();
+                const scrollLeft = editorRef.current.getScrollLeft();
+                
+                // 为每一行创建高亮div
+                for (let lineNumber = startPos.lineNumber; lineNumber <= endPos.lineNumber; lineNumber++) {
+                  // 获取行的绝对位置（不考虑滚动）
+                  const lineTop = editorRef.current.getTopForLineNumber(lineNumber);
+                  const lineHeight = editorRef.current.getOption(monaco.editor.EditorOption.lineHeight);
+                  
+                  const lineContent = model.getLineContent(lineNumber);
+                  let startCol = lineNumber === startPos.lineNumber ? startPos.column : 1;
+                  let endCol = lineNumber === endPos.lineNumber ? endPos.column : lineContent.length + 1;
+                  
+                  // 使用Monaco API精确获取列的像素位置（支持中文和变宽字体）
+                  const startOffset = editorRef.current.getOffsetForColumn(lineNumber, startCol);
+                  const endOffset = editorRef.current.getOffsetForColumn(lineNumber, endCol);
+                  
+                  const highlightDiv = document.createElement('div');
+                  highlightDiv.style.position = 'absolute';
+                  // 减去滚动偏移，使高亮固定在文本上
+                  highlightDiv.style.top = `${lineTop - scrollTop}px`;
+                  highlightDiv.style.height = `${lineHeight}px`;
+                  highlightDiv.style.backgroundColor = '#ADD6FF';
+                  highlightDiv.style.opacity = '0.5';
+                  
+                  // 使用精确的像素位置（减去水平滚动）
+                  highlightDiv.style.left = `${startOffset - scrollLeft}px`;
+                  highlightDiv.style.width = `${endOffset - startOffset}px`;
+                  
+                  highlightOverlay.appendChild(highlightDiv);
+                }
+              };
+              
+              // 监听选择变化 - 保存选择位置
+              editorRef.current.onDidChangeCursorSelection(() => {
+                if (!editorRef.current) return;
+                
+                const selection = editorRef.current.getSelection();
+                const model = editorRef.current.getModel();
+                
+                if (!selection || !model || selection.isEmpty()) {
+                  savedSelection = null;
+                  highlightOverlay.innerHTML = '';
+                  return;
+                }
+                
+                savedSelection = {
+                  start: selection.getStartPosition(),
+                  end: selection.getEndPosition()
+                };
+                
+                updateHighlightPosition();
+              });
+              
+              // 监听滚动 - 更新高亮位置
+              editorRef.current.onDidScrollChange(() => {
+                updateHighlightPosition();
+              });
               
               // 强制刷新光标位置
               const position = editorRef.current.getPosition();

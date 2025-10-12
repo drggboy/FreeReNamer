@@ -43,6 +43,14 @@ const RootComponent = () => {
       const handleSelectStart = (e: Event) => {
         const target = e.target as HTMLElement;
         
+        // 允许Monaco Editor中的文本选择（优先检查，因为Monaco用的是普通div）
+        const isInMonacoEditor = target.closest('.monaco-editor');
+        if (isInMonacoEditor) {
+          // 完全不干预Monaco Editor的选择事件
+          e.stopPropagation();
+          return true;
+        }
+        
         // 允许输入框和可编辑元素的文本选择
         if (target.tagName === 'INPUT' || 
             target.tagName === 'TEXTAREA' || 
@@ -90,15 +98,16 @@ const RootComponent = () => {
       };
 
       // 添加事件监听器
+      // selectstart使用捕获阶段，但不使用passive以允许preventDefault
       document.addEventListener('contextmenu', handleContextMenu, true);
-      document.addEventListener('selectstart', handleSelectStart, true);
+      document.addEventListener('selectstart', handleSelectStart, { capture: true, passive: false });
       document.addEventListener('keydown', handleKeyDown, true);
 
       // 清理函数
       return () => {
         document.body.classList.remove('disable-context-menu');
         document.removeEventListener('contextmenu', handleContextMenu, true);
-        document.removeEventListener('selectstart', handleSelectStart, true);
+        document.removeEventListener('selectstart', handleSelectStart, { capture: true, passive: false } as any);
         document.removeEventListener('keydown', handleKeyDown, true);
       };
     }

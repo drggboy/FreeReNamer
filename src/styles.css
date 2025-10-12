@@ -66,17 +66,33 @@
     -webkit-context-menu: none;
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
+    user-select: none;
   }
   
   /* 允许输入框和可编辑元素选择文本 */
   .disable-context-menu input, 
   .disable-context-menu textarea, 
-  .disable-context-menu [contenteditable="true"],
-  .disable-context-menu .monaco-editor,
-  .disable-context-menu .monaco-editor * {
+  .disable-context-menu [contenteditable="true"] {
     -webkit-user-select: text !important;
     -webkit-context-menu: auto !important;
     user-select: text !important;
+  }
+  
+  /* 允许Monaco Editor中的文本选择 - 使用更高优先级 */
+  .disable-context-menu .monaco-editor,
+  .disable-context-menu .monaco-editor *,
+  .monaco-editor,
+  .monaco-editor *,
+  .monaco-editor .view-lines,
+  .monaco-editor .view-lines *,
+  .monaco-editor .view-line,
+  .monaco-editor .view-line * {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+    -webkit-context-menu: auto !important;
+    cursor: text !important;
   }
   
   /* 允许自定义右键菜单区域 */
@@ -221,4 +237,32 @@
   /* 确保视口内容正确显示 */
   .monaco-editor .view-zone {
     transform: translateZ(0);
+  }
+
+  /* 修复 Tauri 环境下文本选中效果缺失问题 */
+  /* 生产环境使用JavaScript手动创建的选择高亮层 */
+  
+  /* 确保自定义选择overlay可见 */
+  .custom-selection-overlay {
+    pointer-events: none !important;
+    z-index: 10 !important;
+  }
+  
+  .custom-selection-overlay > div {
+    pointer-events: none !important;
+  }
+  
+  /* 通用文本选择样式修复 - 适用于其他可编辑区域 */
+  .disable-context-menu input::selection,
+  .disable-context-menu textarea::selection,
+  .disable-context-menu [contenteditable="true"]::selection {
+    background-color: rgba(173, 214, 255, 0.8) !important;
+    color: inherit !important;
+  }
+  
+  .disable-context-menu input::-moz-selection,
+  .disable-context-menu textarea::-moz-selection,
+  .disable-context-menu [contenteditable="true"]::-moz-selection {
+    background-color: rgba(173, 214, 255, 0.8) !important;
+    color: inherit !important;
   }

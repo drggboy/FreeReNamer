@@ -36,3 +36,17 @@
 - 单个配置内支持多个规则
 - 支持js脚本，内置Monaco Editor。
 - 跨平台，支持windows,macos,linux
+
+## 本地开发与打包
+
+- 开发调试运行
+
+  ```bash
+  pnpm run tauri dev
+  ```
+
+- 编译打包（生成可执行文件）
+
+  ```bash
+  pnpm tauri build
+  ```
