@@ -20,6 +20,10 @@ export const fileItemInfoQueryOptions = (
 ) =>
   queryOptions({
     queryKey: [QueryType.FileItemInfo, { profileId, file, index, sortConfig }],
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 30,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
       const profile = await getProfile(profileId);
       const fileInfo = await getFileInfo(file);

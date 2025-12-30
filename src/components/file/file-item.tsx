@@ -4,7 +4,7 @@ import { fileItemInfoQueryOptions } from '@/lib/queries/file';
 import { atomStore, selectedFilesAtom, imageViewerAppAtom, videoViewerAppAtom, filesAtom, selectedThumbnailAtom, getProfileSelectedFilesAtom, getProfileFilesAtom, type FileSortConfig, type ColumnWidths, type FilesAtomTauri } from '@/lib/atoms';
 import { Checkbox } from '../ui/checkbox';
 import { useAtomValue } from 'jotai';
-import { Image, ExternalLink, Lock, X, Video } from 'lucide-react';
+import { Image as ImageIcon, ExternalLink, Lock, X, Video } from 'lucide-react';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
 
@@ -16,6 +16,11 @@ export interface FileItemProps {
   columnWidths: ColumnWidths;
   deleteMode?: boolean;
   onPendingStateChange?: () => void;
+  thumbnailEnabled?: boolean;
+  thumbnailMode?: 'normal' | 'low';
+  getManualRenameState?: (file: string) => ManualRenameState | undefined;
+  setManualRenameState?: (file: string, state: ManualRenameState | null) => void;
+  rowHeight?: number;
 }
 
 export interface FileItemHandle {
@@ -23,6 +28,11 @@ export interface FileItemHandle {
   hasPendingRename: () => boolean;
   getManualName: () => string;
   getFinalName: () => string; // 获取最终的文件名（手动修改列显示的内容）
+}
+
+export interface ManualRenameState {
+  manualName: string;
+  isPendingRename: boolean;
 }
 
 // 创建全局缩略图缓存对象
@@ -33,8 +43,80 @@ if (typeof window !== 'undefined') {
   window.__THUMBNAIL_CACHE__ = thumbnailCache;
 }
 
+const TAURI_THUMBNAIL_CONCURRENCY = 4;
+const TAURI_THUMBNAIL_FALLBACK_MAX_BYTES = 12 * 1024 * 1024;
+
+type ThumbnailQueueEntry = {
+  task: () => Promise<string | null>;
+  resolve: (value: string | null) => void;
+  reject: (error: unknown) => void;
+  cancelled: boolean;
+};
+
+let activeThumbnailTasks = 0;
+const thumbnailQueue: ThumbnailQueueEntry[] = [];
+
+function runThumbnailQueue() {
+  if (activeThumbnailTasks >= TAURI_THUMBNAIL_CONCURRENCY) return;
+
+  const next = thumbnailQueue.shift();
+  if (!next) return;
+
+  if (next.cancelled) {
+    runThumbnailQueue();
+    return;
+  }
+
+  activeThumbnailTasks += 1;
+
+  next.task()
+    .then(next.resolve)
+    .catch(next.reject)
+    .finally(() => {
+      activeThumbnailTasks -= 1;
+      runThumbnailQueue();
+    });
+}
+
+function enqueueThumbnailTask(task: () => Promise<string | null>) {
+  const entry: ThumbnailQueueEntry = {
+    task,
+    resolve: () => {},
+    reject: () => {},
+    cancelled: false
+  };
+
+  const promise = new Promise<string | null>((resolve, reject) => {
+    entry.resolve = resolve;
+    entry.reject = reject;
+  });
+
+  thumbnailQueue.push(entry);
+  runThumbnailQueue();
+
+  return {
+    promise,
+    cancel: () => {
+      entry.cancelled = true;
+    }
+  };
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.Image) {
+      reject(new Error('当前环境不支持Image构造函数'));
+      return;
+    }
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('缩略图图片加载失败'));
+    image.src = url;
+  });
+}
+
 // 使用memo包装组件，避免不必要的重新渲染
-export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, deleteMode = false, onPendingStateChange }, ref) => {
+export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, profileId, index, sortConfig, columnWidths, deleteMode = false, onPendingStateChange, thumbnailEnabled = true, thumbnailMode = 'normal', getManualRenameState, setManualRenameState, rowHeight }, ref) => {
   const {
     data: fileItemInfo,
     error,
@@ -63,6 +145,25 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
   const [hasChanges, setHasChanges] = useState<boolean>(false);
   // 标记是否已锁定修改（待执行）
   const [isPendingRename, setIsPendingRename] = useState<boolean>(false);
+  const isThumbnailEnabled = thumbnailEnabled ?? true;
+  const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI_IPC__);
+  const cacheKey = useMemo(() => `${file}`, [file]);
+  const thumbnailConfig = useMemo(() => {
+    if (thumbnailMode === 'low') {
+      return { width: 96, height: 72, quality: 0.6 };
+    }
+    return { width: 160, height: 120, quality: 0.85 };
+  }, [thumbnailMode]);
+
+  useEffect(() => {
+    if (!getManualRenameState) return;
+    const storedState = getManualRenameState(file);
+    if (storedState?.isPendingRename && storedState.manualName) {
+      setManualName(storedState.manualName);
+      setIsPendingRename(true);
+      setHasChanges(true);
+    }
+  }, [file, getManualRenameState]);
   
   // 确认修改（实际执行重命名）- 此方法由外部"执行"按钮调用
   const handleConfirmEdit = useCallback(async () => {
@@ -71,8 +172,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     }
 
     try {
-      // @ts-ignore - __TAURI_IPC__ 可能在运行时存在
-      if (typeof window !== 'undefined' && window.__TAURI_IPC__) {
+      if (isTauri) {
         // Tauri环境下实现重命名
         const { invoke } = await import('@tauri-apps/api');
         const { dirname, join } = await import('@tauri-apps/api/path');
@@ -115,6 +215,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         toast.success(`"${file}" 重命名为 "${manualName}" 成功`);
         setIsPendingRename(false);
         setHasChanges(false);
+        setManualRenameState?.(file, null);
         
         // 清理旧文件的缩略图缓存
         const oldCacheKey = `${file}_${fileItemInfo.fileInfo.fullName}`;
@@ -140,7 +241,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       toast.error(`重命名失败: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
-  }, [file, manualName, fileItemInfo, isPendingRename, onPendingStateChange]);
+  }, [file, manualName, fileItemInfo, isPendingRename, onPendingStateChange, setManualRenameState]);
   
   // 将重命名方法通过ref暴露给父组件
   useImperativeHandle(ref, () => ({
@@ -163,6 +264,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       // 这确保手动修改列始终显示"最终"会被应用的文件名
       if (!isPendingRename) {
         setManualName(fileItemInfo.preview || fileItemInfo.fileInfo.fullName);
+        setHasChanges(false);
       }
       // 如果有待执行的重命名，保持用户的手动输入不变
     }
@@ -187,13 +289,14 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     // 标记为已锁定修改（待执行）
     if (hasChanges) {
       setIsPendingRename(true);
+      setManualRenameState?.(file, { manualName, isPendingRename: true });
       toast.info('已锁定修改，点击"执行"按钮应用更改');
       // 通知父组件状态变化
       onPendingStateChange?.();
     }
     
     setIsEditing(false);
-  }, [manualName, fileItemInfo, hasChanges, onPendingStateChange]);
+  }, [manualName, fileItemInfo, hasChanges, onPendingStateChange, setManualRenameState, file]);
 
   // 取消修改
   const handleCancelEdit = useCallback(() => {
@@ -204,10 +307,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     setHasChanges(false);
     if (isPendingRename) {
       setIsPendingRename(false);
+      setManualRenameState?.(file, null);
       // 通知父组件状态变化
       onPendingStateChange?.();
     }
-  }, [fileItemInfo, isPendingRename, onPendingStateChange]);
+  }, [fileItemInfo, isPendingRename, onPendingStateChange, setManualRenameState, file]);
 
   // 开始编辑
   const handleStartEdit = useCallback(() => {
@@ -225,6 +329,20 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     }
   }, [columnWidths, deleteMode]);
 
+  const rowStyle = useMemo(() => {
+    if (rowHeight) {
+      return { gridTemplateColumns, height: rowHeight };
+    }
+    return { gridTemplateColumns };
+  }, [gridTemplateColumns, rowHeight]);
+
+  const rowPaddingClass = rowHeight ? 'py-0' : 'py-1';
+  const rowTextClass = rowHeight ? 'leading-none' : '';
+
+  const rowClassName = rowHeight
+    ? 'grid w-full grid-cols-1 divide-x text-sm hover:bg-neutral-100 overflow-hidden whitespace-nowrap'
+    : 'grid min-h-8 w-full grid-cols-1 divide-x break-all text-sm hover:bg-neutral-100';
+
   // 获取缩略图URL（支持图片和视频）
   const getThumbnailUrl = useCallback(async (): Promise<string | null> => {
     if (!fileItemInfo?.fileInfo.isImage && !fileItemInfo?.fileInfo.isVideo) {
@@ -232,7 +350,6 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
     }
     
     // 使用文件路径作为缓存键，更加稳定
-    const cacheKey = `${file}`;
     if (thumbnailCache.has(cacheKey)) {
       return thumbnailCache.get(cacheKey) || null;
     }
@@ -254,8 +371,8 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           if (fileItemInfo.fileInfo.isVideo) {
             const { generateVideoThumbnail } = await import('@/lib/video-thumbnail');
             const thumbnailUrl = await generateVideoThumbnail(file, {
-              width: 160,
-              height: 120,
+              width: thumbnailConfig.width,
+              height: thumbnailConfig.height,
               seekTime: 1
             });
             
@@ -265,24 +382,42 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           }
           
           // 图片文件处理逻辑
-          // 直接使用base64方式，避免asset协议问题
-          const { readBinaryFile } = await import('@tauri-apps/api/fs');
-          const { getMimeType } = await import('@/lib/file');
+          // 使用asset协议避免读取整文件到内存
+          const { convertFileSrc } = await import('@tauri-apps/api/tauri');
+          const fileUrl = convertFileSrc(file);
           
-          const fileContent = await readBinaryFile(file);
-          const mimeType = getMimeType(fileItemInfo.fileInfo.ext);
+          if (thumbnailMode === 'low') {
+            const image = await loadImage(fileUrl);
+            const scale = Math.min(
+              thumbnailConfig.width / image.width,
+              thumbnailConfig.height / image.height,
+              1
+            );
+            const targetWidth = Math.max(1, Math.round(image.width * scale));
+            const targetHeight = Math.max(1, Math.round(image.height * scale));
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              throw new Error('无法创建Canvas上下文');
+            }
+            
+            ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+            try {
+              const dataUrl = canvas.toDataURL('image/jpeg', thumbnailConfig.quality);
+              thumbnailCache.set(cacheKey, dataUrl);
+              return dataUrl;
+            } catch (canvasError) {
+              console.warn('缩略图降质失败，回退为原图加载:', canvasError);
+              thumbnailCache.set(cacheKey, fileUrl);
+              return fileUrl;
+            }
+          }
           
-          // 将二进制数据转换为base64字符串
-          const base64Content = btoa(
-            new Uint8Array(fileContent)
-              .reduce((data, byte) => data + String.fromCharCode(byte), '')
-          );
-          
-          const dataUrl = `data:${mimeType};base64,${base64Content}`;
-          
-          // 保存到缓存
-          thumbnailCache.set(cacheKey, dataUrl);
-          return dataUrl;
+          thumbnailCache.set(cacheKey, fileUrl);
+          return fileUrl;
         } catch (err) {
           console.error('❌ [Tauri] 读取文件错误:', err);
           console.error('❌ [Tauri] 错误详情:', (err as any)?.message || err);
@@ -304,8 +439,9 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         if (fileItemInfo.fileInfo.isVideo) {
           const { generateVideoThumbnail } = await import('@/lib/video-thumbnail');
           const thumbnailUrl = await generateVideoThumbnail(fileHandle, {
-            width: 160,
-            height: 120,
+            width: thumbnailConfig.width,
+            height: thumbnailConfig.height,
+            quality: thumbnailConfig.quality,
             seekTime: 1
           });
           
@@ -324,20 +460,59 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       console.error('获取缩略图URL失败:', error);
       return null;
     }
-  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.fullName]);
+  }, [file, fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.fullName, thumbnailConfig, thumbnailMode, isTauri]);
 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [thumbnailError, setThumbnailError] = useState(false);
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const [thumbnailFallbackAttempted, setThumbnailFallbackAttempted] = useState(false);
+
+  const loadThumbnailFallback = useCallback(async () => {
+    if (!isTauri || thumbnailFallbackAttempted) {
+      return;
+    }
+
+    const fileSize = fileItemInfo?.fileInfo.size;
+    if (fileSize && fileSize > TAURI_THUMBNAIL_FALLBACK_MAX_BYTES) {
+      console.warn(`缩略图回退跳过，文件过大: ${file}`, fileSize);
+      setThumbnailFallbackAttempted(true);
+      return;
+    }
+
+    try {
+      const { readBinaryFile } = await import('@tauri-apps/api/fs');
+      const { getMimeType } = await import('@/lib/file');
+      const fileContent = await readBinaryFile(file);
+      const mimeType = getMimeType(fileItemInfo?.fileInfo.ext ?? '');
+      const blobUrl = URL.createObjectURL(new Blob([fileContent], { type: mimeType || 'application/octet-stream' }));
+      
+      thumbnailCache.set(cacheKey, blobUrl);
+      setThumbnailUrl(blobUrl);
+      setThumbnailError(false);
+    } catch (error) {
+      console.error('缩略图回退失败:', error);
+      setThumbnailError(true);
+    } finally {
+      setThumbnailFallbackAttempted(true);
+    }
+  }, [cacheKey, file, fileItemInfo?.fileInfo.ext, fileItemInfo?.fileInfo.size, isTauri, thumbnailFallbackAttempted]);
 
   // 在组件挂载和相关依赖变化时获取缩略图URL
   useEffect(() => {
     let mounted = true;
+    setThumbnailFallbackAttempted(false);
     
-    
+    if (!isThumbnailEnabled) {
+      setThumbnailUrl(null);
+      setThumbnailLoading(false);
+      setThumbnailError(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
     if (fileItemInfo?.fileInfo.isImage || fileItemInfo?.fileInfo.isVideo) {
       // 检查缓存中是否已有此文件的缩略图
-      const cacheKey = `${file}`;
       const cachedUrl = thumbnailCache.get(cacheKey);
       
       if (cachedUrl) {
@@ -350,14 +525,16 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         setThumbnailLoading(true);
         setThumbnailError(false);
         
-        getThumbnailUrl()
+        const { promise, cancel } = isTauri
+          ? enqueueThumbnailTask(getThumbnailUrl)
+          : { promise: getThumbnailUrl(), cancel: () => {} };
+        
+        promise
           .then(url => {
             if (mounted && url) {
               setThumbnailUrl(url);
-            } else {
-              if (mounted) {
-                setThumbnailError(true);
-              }
+            } else if (mounted) {
+              setThumbnailError(true);
             }
           })
           .catch(err => {
@@ -371,6 +548,11 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
               setThumbnailLoading(false);
             }
           });
+
+        return () => {
+          mounted = false;
+          cancel();
+        };
       }
     } else {
       setThumbnailUrl(null);
@@ -383,10 +565,13 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
       
       // 注意：不再在每次组件卸载时释放URL，而是在应用关闭或清理缓存时统一处理
     };
-  }, [fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, file, getThumbnailUrl]);
+  }, [fileItemInfo?.fileInfo.isImage, fileItemInfo?.fileInfo.isVideo, cacheKey, getThumbnailUrl, isThumbnailEnabled, isTauri]);
 
   // 处理图片/视频点击事件，打开文件
   const handleImageClick = useCallback(async () => {
+    if (!isThumbnailEnabled) {
+      return;
+    }
     if (fileItemInfo?.fileInfo.isImage || fileItemInfo?.fileInfo.isVideo) {
       // 设置当前缩略图为选中状态
       atomStore.set(selectedThumbnailAtom, file);
@@ -456,7 +641,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
         console.error('打开文件失败:', error);
       }
     }
-  }, [file, fileItemInfo?.fileInfo.isImage, imageViewerApp]);
+  }, [file, fileItemInfo?.fileInfo.isImage, imageViewerApp, isThumbnailEnabled]);
 
   function onCheckedChange(checked: boolean) {
     // 根据平台选择正确的selectedFiles atom
@@ -473,7 +658,7 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
   if (isError) {
     return (
-      <div className="grid min-h-8 w-full grid-cols-1 divide-x break-all text-sm hover:bg-neutral-100">
+      <div className={rowClassName} style={rowStyle}>
         <div className="flex items-center justify-center">
           {error as unknown as string}
         </div>
@@ -487,53 +672,53 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
 
   return (
     <div 
-      className="grid min-h-8 w-full divide-x break-all text-sm hover:bg-neutral-100"
-      style={{ gridTemplateColumns }}
+      className={rowClassName}
+      style={rowStyle}
     >
       {deleteMode && (
         <div className="flex size-full items-center justify-center">
           <Checkbox checked={selected} onCheckedChange={onCheckedChange} />
         </div>
       )}
-      <span className="flex size-full items-center justify-center px-2 py-1 text-neutral-700">
+      <span className={`flex size-full items-center justify-center px-2 ${rowPaddingClass} text-neutral-700 ${rowHeight ? 'box-border' : ''} ${rowTextClass}`}>
         {fileItemInfo.sortedIndex + 1}
       </span>
-      <span className="flex size-full items-center px-2 py-1 text-neutral-700">
+      <span className={`flex size-full items-center px-2 ${rowPaddingClass} text-neutral-700 ${rowHeight ? 'truncate box-border' : ''} ${rowTextClass}`} title={fileItemInfo.fileInfo.fullName}>
         {fileItemInfo.fileInfo.fullName}
       </span>
-      <span className="flex size-full items-center px-2 py-1 text-neutral-700">
+      <span className={`flex size-full items-center px-2 ${rowPaddingClass} text-neutral-700 ${rowHeight ? 'truncate box-border' : ''} ${rowTextClass}`}>
         {fileItemInfo.fileInfo.timeString || '-'}
       </span>
-      <span className="flex size-full items-center justify-center px-2 py-1">
-        {(fileItemInfo.fileInfo.isImage || fileItemInfo.fileInfo.isVideo) && (
+      <span className={`flex size-full items-center justify-center px-2 ${rowPaddingClass} ${rowHeight ? 'box-border' : ''} ${rowTextClass}`}>
+        {isThumbnailEnabled && (fileItemInfo.fileInfo.isImage || fileItemInfo.fileInfo.isVideo) && (
           <>
-            {thumbnailLoading && (
-              <div className="flex flex-col items-center justify-center text-xs text-gray-500">
-                {fileItemInfo.fileInfo.isVideo ? (
-                  <Video className="h-6 w-6 animate-pulse text-gray-400" />
-                ) : (
-                  <Image className="h-6 w-6 animate-pulse text-gray-400" />
+                {thumbnailLoading && (
+                  <div className="flex flex-col items-center justify-center text-xs text-gray-500">
+                    {fileItemInfo.fileInfo.isVideo ? (
+                      <Video className="h-6 w-6 animate-pulse text-gray-400" />
+                    ) : (
+                      <ImageIcon className="h-6 w-6 animate-pulse text-gray-400" />
+                    )}
+                    <span>加载中...</span>
+                  </div>
                 )}
-                <span>加载中...</span>
-              </div>
-            )}
             
-            {thumbnailError && (
-              <div className="flex flex-col items-center justify-center text-xs text-red-500" title={file}>
-                {fileItemInfo.fileInfo.isVideo ? (
-                  <Video className="h-6 w-6 text-red-400" />
-                ) : (
-                  <Image className="h-6 w-6 text-red-400" />
+                {thumbnailError && (
+                  <div className="flex flex-col items-center justify-center text-xs text-red-500" title={file}>
+                    {fileItemInfo.fileInfo.isVideo ? (
+                      <Video className="h-6 w-6 text-red-400" />
+                    ) : (
+                      <ImageIcon className="h-6 w-6 text-red-400" />
+                    )}
+                    <span>加载失败</span>
+                  </div>
                 )}
-                <span>加载失败</span>
-              </div>
-            )}
             
             {!thumbnailLoading && !thumbnailError && thumbnailUrl && (
               <div className={`relative flex items-center justify-center group p-1 rounded transition-all ${
                 isThumbnailSelected 
-                  ? 'border-2 border-blue-500 bg-blue-50' 
-                  : 'border-2 border-transparent'
+                  ? 'ring-2 ring-blue-500 ring-inset bg-blue-50' 
+                  : 'ring-2 ring-transparent ring-inset'
               }`}>
                 <img 
                   src={thumbnailUrl} 
@@ -543,6 +728,14 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
                   onClick={handleImageClick}
                   onError={() => {
                     console.error(`${fileItemInfo.fileInfo.isVideo ? '视频' : '图片'}缩略图加载失败:`, thumbnailUrl);
+                    if (
+                      isTauri &&
+                      !thumbnailFallbackAttempted &&
+                      (thumbnailUrl?.startsWith('asset:') || thumbnailUrl?.startsWith('tauri:'))
+                    ) {
+                      void loadThumbnailFallback();
+                      return;
+                    }
                     setThumbnailError(true);
                   }}
                 />
@@ -559,10 +752,10 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           </>
         )}
       </span>
-      <span className="flex size-full items-center px-2 py-1 font-bold">
+      <span className={`flex size-full items-center px-2 ${rowPaddingClass} font-bold ${rowHeight ? 'truncate box-border' : ''} ${rowTextClass}`} title={fileItemInfo.preview}>
         {fileItemInfo.preview}
       </span>
-      <span className="flex size-full items-center px-2 py-1 relative">
+      <span className={`flex size-full items-center px-2 ${rowPaddingClass} relative ${rowHeight ? 'box-border' : ''} ${rowTextClass}`}>
         {isEditing ? (
           <div className="flex w-full items-center gap-x-1">
             <Input 
@@ -599,11 +792,13 @@ export const FileItem = memo(forwardRef<FileItemHandle, FileItemProps>(({ file, 
           </div>
         ) : (
           <div 
-            className={`w-full cursor-pointer px-1 py-0.5 rounded ${isPendingRename ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
+            className={`w-full cursor-pointer px-1 ${rowHeight ? 'py-0' : 'py-0.5'} rounded ${isPendingRename ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
             onClick={handleStartEdit}
             title="点击编辑"
           >
-            {manualName || (fileItemInfo.preview || fileItemInfo.fileInfo.fullName)}
+            <span className={rowHeight ? 'truncate block' : ''} title={manualName || (fileItemInfo.preview || fileItemInfo.fileInfo.fullName)}>
+              {manualName || (fileItemInfo.preview || fileItemInfo.fileInfo.fullName)}
+            </span>
             {isPendingRename && <span className="ml-1 text-xs text-blue-500">(待执行)</span>}
           </div>
         )}

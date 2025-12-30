@@ -19,6 +19,7 @@ export interface SerializableProfileState {
     type: FileSortType;
     order: FileSortOrder;
   };
+  showThumbnails: boolean;
 }
 
 /**
@@ -27,7 +28,8 @@ export interface SerializableProfileState {
 export function serializeProfileState(state: ProfileState): SerializableProfileState {
   return {
     currentFolder: typeof state.currentFolder === 'string' ? state.currentFolder : null,
-    fileSortConfig: state.fileSortConfig
+    fileSortConfig: state.fileSortConfig,
+    showThumbnails: state.showThumbnails
   };
 }
 
@@ -37,7 +39,8 @@ export function serializeProfileState(state: ProfileState): SerializableProfileS
 export function deserializeProfileState(serializedState: SerializableProfileState): Partial<ProfileState> {
   return {
     currentFolder: serializedState.currentFolder,
-    fileSortConfig: serializedState.fileSortConfig
+    fileSortConfig: serializedState.fileSortConfig,
+    showThumbnails: serializedState.showThumbnails ?? true
   };
 }
 

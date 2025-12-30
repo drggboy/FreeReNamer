@@ -56,6 +56,7 @@ export async function getFileInfo(file: string | FileSystemFileHandle): Promise<
   let ext = '';
   let name = '';
   let timestamp: number | undefined;
+  let size: number | undefined;
   
   if (typeof file === 'string') {
     ext = await getExt(file);
@@ -66,6 +67,7 @@ export async function getFileInfo(file: string | FileSystemFileHandle): Promise<
     name = fileObj.name.replace(/\.[^/.]+$/, ''); // 移除扩展名
     ext = fileObj.name.match(/\.[^/.]+$/)?.[0] || '';
     timestamp = fileObj.lastModified;
+    size = fileObj.size;
   }
   
   const fullName = `${name}${ext}`;
@@ -73,5 +75,5 @@ export async function getFileInfo(file: string | FileSystemFileHandle): Promise<
   const isImage = isImageFile(ext);
   const isVideo = isVideoFile(ext);
   
-  return { name, ext, fullName, timestamp, timeString, isImage, isVideo };
+  return { name, ext, fullName, timestamp, timeString, size, isImage, isVideo };
 }

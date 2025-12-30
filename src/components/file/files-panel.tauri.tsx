@@ -8,6 +8,7 @@ import {
   getProfileSelectedFilesAtom,
   getProfileCurrentFolderAtom,
   getProfileSelectedThumbnailAtom,
+  getProfileShowThumbnailsAtom,
   getProfileFileSortConfigAtom,
   getProfileFolderExistsAtom,
   deleteModeAtom,
@@ -23,6 +24,7 @@ import { QueryType } from '@/lib/query';
 import { FileItem, type FileItemHandle } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
+import { Switch } from '../ui/switch';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
@@ -40,6 +42,7 @@ export interface FilesPanelProps {
 declare global {
   interface Window {
     __FILE_ITEM_REFS__?: Map<string | FileSystemFileHandle, React.RefObject<FileItemHandle>>;
+    __FILE_ITEM_MANUAL_STATE__?: Map<string, { manualName: string; isPendingRename: boolean }>;
     __THUMBNAIL_CACHE__?: Map<string, string>;
     __ALL_FILES__?: (string | FileSystemFileHandle)[];
   }
@@ -62,6 +65,10 @@ function clearThumbnailCache() {
 
 // 像素到rem的转换比例
 const PX_TO_REM = 16; // 假设1rem = 16px
+const BASE_ROW_HEIGHT = 32;
+const THUMBNAIL_ROW_HEIGHT = 48;
+const VIRTUAL_OVERSCAN = 6;
+const THUMBNAIL_QUALITY_THRESHOLD = 150;
 
 const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 使用基于配置的状态管理
@@ -74,6 +81,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const [imageViewerApp, setImageViewerApp] = useAtom(imageViewerAppAtom);
   const [videoViewerApp, setVideoViewerApp] = useAtom(videoViewerAppAtom);
   const [currentFolder, setCurrentFolder] = useAtom(getProfileCurrentFolderAtom(profileId));
+  const [showThumbnails, setShowThumbnails] = useAtom(getProfileShowThumbnailsAtom(profileId));
   const [deleteMode, setDeleteMode] = useAtom(deleteModeAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
   // 标记是否正在调整列宽
@@ -84,12 +92,18 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 使用ref保存容器元素，用于计算百分比宽度
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const rowHeight = showThumbnails ? THUMBNAIL_ROW_HEIGHT : BASE_ROW_HEIGHT;
   
   // 当前列宽，用于暂存拖动过程中的列宽
   const [currentWidths, setCurrentWidths] = useState<ColumnWidths>({...columnWidths});
   
   // 使用ref存储所有文件项的引用
   const fileItemRefs = useRef<Map<string | FileSystemFileHandle, React.RefObject<FileItemHandle>>>(new Map());
+  const manualRenameStateRef = useRef<Map<string, { manualName: string; isPendingRename: boolean }>>(new Map());
   
   // 标记是否已经进行过初始宽度调整
   const hasInitialAdjusted = useRef<boolean>(false);
@@ -114,6 +128,53 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     // 更新ref记录的列宽
     lastColumnWidths.current = columnWidths;
   }, [columnWidths, isResizing]);
+
+  useEffect(() => {
+    const root = scrollAreaRef.current;
+    if (!root) return;
+
+    const viewport = root.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement | null;
+    if (!viewport) return;
+
+    let rafId: number | null = null;
+    let lastRowIndex = -1;
+
+    const handleScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const nextTop = viewport.scrollTop;
+        const nextRowIndex = Math.floor(nextTop / rowHeight);
+        if (nextRowIndex === lastRowIndex) {
+          return;
+        }
+        lastRowIndex = nextRowIndex;
+        setScrollTop(nextTop);
+      });
+    };
+
+    const initialTop = viewport.scrollTop;
+    lastRowIndex = Math.floor(initialTop / rowHeight);
+    setScrollTop(initialTop);
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+
+    let resizeObserver: ResizeObserver | null = null;
+    setViewportHeight(viewport.clientHeight);
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        setViewportHeight(viewport.clientHeight);
+      });
+      resizeObserver.observe(viewport);
+    }
+
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      resizeObserver?.disconnect();
+    };
+  }, [rowHeight]);
 
   // 检测文件夹变化并重置初始调整标记
   useEffect(() => {
@@ -452,6 +513,31 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     return sortedIndices.map(index => files[index]);
   }, [files, sortedIndices]);
 
+  const getManualRenameState = useCallback((fileKey: string) => {
+    return manualRenameStateRef.current.get(fileKey);
+  }, []);
+
+  const setManualRenameState = useCallback((fileKey: string, state: { manualName: string; isPendingRename: boolean } | null) => {
+    if (!state) {
+      manualRenameStateRef.current.delete(fileKey);
+      return;
+    }
+    manualRenameStateRef.current.set(fileKey, state);
+  }, []);
+
+  const isOverThumbnailThreshold = files.length > THUMBNAIL_QUALITY_THRESHOLD;
+  const thumbnailMode = isOverThumbnailThreshold ? 'low' : 'normal';
+
+  const totalRows = sortedFiles.length;
+  const effectiveViewportHeight = viewportHeight || rowHeight * 10;
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - VIRTUAL_OVERSCAN);
+  const endIndex = totalRows === 0
+    ? -1
+    : Math.min(totalRows - 1, Math.ceil((scrollTop + effectiveViewportHeight) / rowHeight) + VIRTUAL_OVERSCAN);
+  const visibleFiles = endIndex >= startIndex ? sortedFiles.slice(startIndex, endIndex + 1) : [];
+  const offsetY = startIndex * rowHeight;
+  const totalHeight = totalRows * rowHeight;
+
   // 将fileItemRefs设置为全局变量，以便route.tsx可以访问
   useEffect(() => {
     window.__FILE_ITEM_REFS__ = fileItemRefs.current;
@@ -459,6 +545,14 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     return () => {
       // 组件卸载时清理全局变量
       window.__FILE_ITEM_REFS__ = undefined;
+    };
+  }, []);
+
+  useEffect(() => {
+    window.__FILE_ITEM_MANUAL_STATE__ = manualRenameStateRef.current;
+    
+    return () => {
+      window.__FILE_ITEM_MANUAL_STATE__ = undefined;
     };
   }, []);
   
@@ -471,6 +565,15 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     files.forEach((file) => {
       fileItemRefs.current.set(file, createRef<FileItemHandle>());
     });
+  }, [files]);
+
+  useEffect(() => {
+    const fileKeys = new Set(files.map((file) => typeof file === 'string' ? file : file.name));
+    for (const key of manualRenameStateRef.current.keys()) {
+      if (!fileKeys.has(key)) {
+        manualRenameStateRef.current.delete(key);
+      }
+    }
   }, [files]);
 
   // 在useEffect中设置全局文件列表
@@ -501,6 +604,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
     
     // 清理缩略图缓存
     clearThumbnailCache();
+    manualRenameStateRef.current.clear();
 
     // 设置当前文件夹路径
     setCurrentFolder(openDir);
@@ -540,6 +644,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       // 清理缩略图缓存
       console.log('🧹 [刷新] 清理缩略图缓存');
       clearThumbnailCache();
+      manualRenameStateRef.current.clear();
       
       // 重新扫描当前文件夹
       console.log(`📂 [刷新] 重新扫描文件夹: ${currentFolder}`);
@@ -771,6 +876,22 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
               </Button>
             )}
           </Button>
+          <div
+            className="flex items-center gap-2 rounded border border-neutral-200 px-2 py-1"
+            title="关闭后不再生成缩略图"
+          >
+            <span className="text-xs text-neutral-600">缩略图</span>
+            <Switch
+              checked={showThumbnails}
+              onCheckedChange={(checked) => {
+                setShowThumbnails(checked);
+                if (!checked) {
+                  clearThumbnailCache();
+                  atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
+                }
+              }}
+            />
+          </div>
           {/* 当前文件夹显示 */}
           <CurrentFolderDisplay profileId={profileId} onFolderClick={onOpenFolder} />
         </div>
@@ -890,23 +1011,33 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
       </div>
       
       <div className="relative h-[calc(100%-4.5rem)]">
-        <ScrollArea className="h-full w-full rounded-b border border-t-0">
-          <div className="flex w-full flex-col divide-y">
-            {sortedFiles.map((file, displayIndex) => {
-              const fileKey = typeof file === 'string' ? file : file.name;
-              return (
-                <FileItem
-                  key={`${fileKey}-${displayIndex}`}
-                  file={typeof file === 'string' ? file : file.name}
-                  profileId={profileId}
-                  index={displayIndex}  // 使用显示索引，让列表映射按显示顺序工作
-                  sortConfig={sortConfig}
-                  columnWidths={currentWidths}
-                  deleteMode={deleteMode}
-                  ref={fileItemRefs.current.get(file)}
-                />
-              );
-            })}
+        <ScrollArea ref={scrollAreaRef} className="h-full w-full rounded-b border border-t-0">
+          <div className="relative w-full" style={{ height: totalHeight }}>
+            <div className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${offsetY}px)` }}>
+              <div className="flex w-full flex-col divide-y">
+                {visibleFiles.map((file, visibleIndex) => {
+                  const displayIndex = startIndex + visibleIndex;
+                  const fileKey = typeof file === 'string' ? file : file.name;
+                  return (
+                    <FileItem
+                      key={`${fileKey}-${displayIndex}`}
+                      file={typeof file === 'string' ? file : file.name}
+                      profileId={profileId}
+                      index={displayIndex}  // 使用显示索引，让列表映射按显示顺序工作
+                      sortConfig={sortConfig}
+                      columnWidths={currentWidths}
+                      deleteMode={deleteMode}
+                      thumbnailEnabled={showThumbnails}
+                      thumbnailMode={thumbnailMode}
+                      getManualRenameState={getManualRenameState}
+                      setManualRenameState={setManualRenameState}
+                      rowHeight={rowHeight}
+                      ref={fileItemRefs.current.get(file)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </ScrollArea>
         
@@ -926,4 +1057,3 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 };
 
 export default FilesPanel;
-

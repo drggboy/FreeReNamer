@@ -11,6 +11,7 @@ export interface ProfileState {
   selectedFiles: string[];
   currentFolder: string | FileSystemDirectoryHandle | null;
   selectedThumbnail: string | null;
+  showThumbnails: boolean;
   undoHistory: UndoOperation[];
   fileSortConfig: FileSortConfig;
   folderExists?: boolean; // 文件夹是否存在（仅在Tauri环境下使用）
@@ -24,6 +25,7 @@ export const defaultProfileState: ProfileState = {
   selectedFiles: [],
   currentFolder: null,
   selectedThumbnail: null,
+  showThumbnails: true,
   undoHistory: [],
   fileSortConfig: {
     type: 'index',
@@ -106,6 +108,23 @@ export const getProfileSelectedThumbnailAtom = (profileId: string) =>
         ...currentState,
         selectedThumbnail
       });
+    }
+  );
+
+/**
+ * 获取指定配置的缩略图显示开关原子
+ */
+export const getProfileShowThumbnailsAtom = (profileId: string) =>
+  atom(
+    (get) => get(profileStateAtomFamily(profileId)).showThumbnails,
+    (get, set, showThumbnails: boolean) => {
+      const currentState = get(profileStateAtomFamily(profileId));
+      const newState = {
+        ...currentState,
+        showThumbnails
+      };
+      set(profileStateAtomFamily(profileId), newState);
+      debouncedSaveProfileState(profileId, newState);
     }
   );
 

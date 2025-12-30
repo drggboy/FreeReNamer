@@ -287,8 +287,9 @@ fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
         .to_string_lossy()
         .to_string();
     
-    // 获取时间戳
+    // 获取时间戳与文件大小
     let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+    let size = metadata.len();
     let mut timestamp = None;
     let mut time_string = None;
     
@@ -324,6 +325,7 @@ fn get_file_info(path: &str) -> Result<serde_json::Value, String> {
         "name": name,
         "ext": ext_with_dot,
         "fullName": full_name,
+        "size": size,
         "isImage": is_image,
         "isVideo": is_video
     });

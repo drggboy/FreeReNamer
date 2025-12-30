@@ -243,6 +243,7 @@ function Component() {
       
       // 获取所有待重命名的文件项引用（用于获取手动修改的名称）
       const fileItemRefs = window.__FILE_ITEM_REFS__;
+      const manualRenameState = (window as any).__FILE_ITEM_MANUAL_STATE__ as Map<string, { manualName: string; isPendingRename: boolean }> | undefined;
       
       // 优化：一次性获取所有文件信息，避免重复调用
       console.log(`🚀 开始收集重命名操作，总文件数: ${sortedIndices.length}`);
@@ -263,6 +264,13 @@ function Component() {
               if (finalName && finalName.trim()) {
                 targetName = finalName;
               }
+            }
+          }
+
+          if (manualRenameState) {
+            const manualState = manualRenameState.get(file);
+            if (manualState?.isPendingRename && manualState.manualName?.trim()) {
+              targetName = manualState.manualName;
             }
           }
           
