@@ -880,7 +880,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
             className="flex items-center gap-2 rounded border border-neutral-200 px-2 py-1"
             title="关闭后不再生成缩略图"
           >
-            <span className="text-xs text-neutral-600">缩略图</span>
+            <span className="text-xs text-neutral-600 whitespace-nowrap">缩略图</span>
             <Switch
               checked={showThumbnails}
               onCheckedChange={(checked) => {

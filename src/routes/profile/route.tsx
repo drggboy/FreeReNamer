@@ -248,36 +248,36 @@ function Component() {
       // 优化：一次性获取所有文件信息，避免重复调用
       console.log(`🚀 开始收集重命名操作，总文件数: ${sortedIndices.length}`);
       
+      const enabledRules = profile?.rules?.filter((rule) => rule.enabled) ?? [];
+      
       // 并行获取所有文件信息，同时进行冲突检查和重命名收集
-      const fileInfoPromises = sortedIndices.map(async (displayIndex) => {
-        const originalIndex = displayIndex;
+      const fileInfoPromises = sortedIndices.map(async (originalIndex, displayIndex) => {
         const file = files[originalIndex] as string;
         
         try {
-          // 提前检查：先获取最终名称，如果可以提前判断无需重命名则跳过
+          // 获取文件信息用于比较与规则执行
+          const fileInfo = await getFileInfo(file);
           let targetName: string | null = null;
           
-          if (fileItemRefs) {
-            const fileRef = fileItemRefs.get(file);
-            if (fileRef?.current?.getFinalName) {
-              const finalName = fileRef.current.getFinalName();
-              if (finalName && finalName.trim()) {
-                targetName = finalName;
-              }
-            }
-          }
-
           if (manualRenameState) {
             const manualState = manualRenameState.get(file);
             if (manualState?.isPendingRename && manualState.manualName?.trim()) {
-              targetName = manualState.manualName;
+              targetName = manualState.manualName.trim();
             }
           }
           
-          // 获取文件信息进行比较
-          const fileInfo = await getFileInfo(file);
+          if (!targetName && fileItemRefs) {
+            const fileRef = fileItemRefs.get(file);
+            const finalName = fileRef?.current?.getFinalName?.();
+            if (finalName && finalName.trim()) {
+              targetName = finalName;
+            }
+          }
+          
           if (!targetName) {
-            targetName = fileInfo.fullName;
+            targetName = enabledRules.length > 0
+              ? await execRules(enabledRules, { fileInfo, index: displayIndex })
+              : fileInfo.fullName;
           }
           
           return {

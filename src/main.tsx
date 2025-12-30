@@ -9,6 +9,7 @@ import { Toaster } from 'sonner';
 import { preloadMonacoEditor } from './lib/monaco-preload';
 import { AppLoading } from './components/loading/app-loading';
 import { Suspense, useEffect } from 'react';
+import { enforceTauriWindowMinSize, isTauriEnvironment } from './lib/tauri-window';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,6 +57,17 @@ const App = () => {
     
     // 启动Monaco Editor延迟预加载
     delayedPreloadMonaco();
+
+    let unlistenResize: (() => void) | undefined;
+    if (isTauriEnvironment()) {
+      enforceTauriWindowMinSize().then((cleanup) => {
+        unlistenResize = cleanup;
+      });
+    }
+
+    return () => {
+      unlistenResize?.();
+    };
   }, []);
 
   return (
