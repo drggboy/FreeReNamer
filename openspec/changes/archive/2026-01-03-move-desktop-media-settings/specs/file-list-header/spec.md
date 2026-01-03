@@ -1,12 +1,7 @@
-# file-list-header Specification
-
-## Purpose
-TBD - created by archiving change update-tauri-desktop-layout. Update Purpose after archive.
-## 需求
+## 修改需求
 ### 需求：缩略图开关标签保持单行
 桌面端工具栏中的“设置”按钮标签 MUST 保持单行显示，不得因窗口变窄而自动换行。
 
 #### 场景：缩窄窗口宽度
 - **当** 用户将窗口宽度调整到较窄
 - **那么** 工具栏“设置”按钮标签保持单行显示（不换行）
-

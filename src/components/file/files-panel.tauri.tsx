@@ -25,14 +25,16 @@ import { FileItem, type FileItemHandle } from './file-item';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { Switch } from '../ui/switch';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { open } from '@tauri-apps/api/dialog';
 import { invoke } from '@tauri-apps/api';
 import { Checkbox } from '../ui/checkbox';
-import { ChevronDown, ChevronUp, RefreshCw, Trash2, Loader2, Image, Video } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCw, Trash2, Loader2, Image, Video, Settings } from 'lucide-react';
 import { getSortedFileIndices } from '@/lib/queries/file';
 import { ResizableDivider } from '../ui/resizable-divider';
 import { calculateFilenameWidth, shouldAdjustFilenameWidth, calculateSmartColumnWidths } from '@/lib/filename-width-calculator';
 import { CurrentFolderDisplay } from '@/components/global/current-folder-display';
+import { toast } from 'sonner';
 
 export interface FilesPanelProps {
   profileId: string;
@@ -84,6 +86,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   const [showThumbnails, setShowThumbnails] = useAtom(getProfileShowThumbnailsAtom(profileId));
   const [deleteMode, setDeleteMode] = useAtom(deleteModeAtom);
   const [sortedIndices, setSortedIndices] = useState<number[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // 标记是否正在调整列宽
   const [isResizing, setIsResizing] = useState(false);
   
@@ -113,6 +116,10 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   
   // 记录上次的列宽，避免useEffect无限循环
   const lastColumnWidths = useRef<ColumnWidths>(columnWidths);
+  
+  const notifySettingsSaved = useCallback(() => {
+    toast.info('设置已保存');
+  }, []);
   
   // 获取容器宽度
   const getContainerWidth = useCallback(() => {
@@ -435,6 +442,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
       if (selectedApp && typeof selectedApp === 'string') {
         setImageViewerApp(selectedApp);
+        notifySettingsSaved();
         console.log('已设置图片查看器:', selectedApp);
       }
     } catch (error) {
@@ -445,8 +453,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 清除图片查看器设置
   const clearImageViewer = useCallback(() => {
     setImageViewerApp(null);
+    notifySettingsSaved();
     console.log('已清除图片查看器设置');
-  }, [setImageViewerApp]);
+  }, [notifySettingsSaved, setImageViewerApp]);
 
   // 选择视频播放器应用
   const selectVideoViewer = useCallback(async () => {
@@ -465,6 +474,7 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
       if (selectedApp && typeof selectedApp === 'string') {
         setVideoViewerApp(selectedApp);
+        notifySettingsSaved();
         console.log('已设置视频播放器:', selectedApp);
       }
     } catch (error) {
@@ -475,8 +485,9 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
   // 清除视频播放器设置
   const clearVideoViewer = useCallback(() => {
     setVideoViewerApp(null);
+    notifySettingsSaved();
     console.log('已清除视频播放器设置');
-  }, [setVideoViewerApp]);
+  }, [notifySettingsSaved, setVideoViewerApp]);
 
   // 切换删除模式
   const toggleDeleteMode = useCallback(() => {
@@ -783,6 +794,90 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
 
   return (
     <div className="size-full">
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="w-full max-w-lg">
+          <DialogHeader>
+            <DialogTitle>媒体设置</DialogTitle>
+            <DialogDescription>更改会自动保存</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="grid gap-1">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Image className="h-4 w-4" />
+                    图片查看器
+                  </div>
+                  <div className="text-xs text-neutral-500">双击图片时调用的应用</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={selectImageViewer}>
+                    选择应用
+                  </Button>
+                  {imageViewerApp && (
+                    <Button size="sm" variant="ghost" onClick={clearImageViewer}>
+                      清除设置
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {imageViewerApp && (
+                <div className="text-xs text-neutral-600 break-all">
+                  当前：{imageViewerApp}
+                </div>
+              )}
+            </div>
+            <div className="grid gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="grid gap-1">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Video className="h-4 w-4" />
+                    视频播放器
+                  </div>
+                  <div className="text-xs text-neutral-500">双击视频时调用的应用</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={selectVideoViewer}>
+                    选择应用
+                  </Button>
+                  {videoViewerApp && (
+                    <Button size="sm" variant="ghost" onClick={clearVideoViewer}>
+                      清除设置
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {videoViewerApp && (
+                <div className="text-xs text-neutral-600 break-all">
+                  当前：{videoViewerApp}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
+              <div className="grid">
+                <span className="text-sm font-semibold">缩略图</span>
+                <span className="text-xs text-neutral-500">关闭后不再生成缩略图</span>
+              </div>
+              <Switch
+                checked={showThumbnails}
+                onCheckedChange={(checked) => {
+                  setShowThumbnails(checked);
+                  if (!checked) {
+                    clearThumbnailCache();
+                    atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
+                  }
+                  notifySettingsSaved();
+                }}
+              />
+            </div>
+            <div className="flex justify-end">
+              <DialogClose asChild>
+                <Button variant="outline">完成</Button>
+              </DialogClose>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="flex w-full justify-between items-center gap-x-2 pb-2">
         <div className="flex items-center gap-x-2">
           <Button size="sm" onClick={onSelectFolder}>
@@ -831,67 +926,13 @@ const FilesPanel: FC<FilesPanelProps> = ({ profileId }) => {
           <Button
             size="sm"
             variant="outline"
-            onClick={selectImageViewer}
-            title={imageViewerApp ? `当前图片查看器: ${imageViewerApp}` : "选择图片查看器"}
-            className="flex items-center gap-1"
+            onClick={() => setSettingsOpen(true)}
+            title="媒体设置"
+            className="flex items-center gap-1 whitespace-nowrap"
           >
-            <Image className="h-4 w-4" />
-            图片查看器
-            {imageViewerApp && (
-              <Button
-                variant="ghost" 
-                size="sm"
-                className="h-5 px-1 py-0 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearImageViewer();
-                }}
-                title="清除图片查看器设置"
-              >
-                ×
-              </Button>
-            )}
+            <Settings className="h-4 w-4" />
+            设置
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={selectVideoViewer}
-            title={videoViewerApp ? `当前视频播放器: ${videoViewerApp}` : "选择视频播放器"}
-            className="flex items-center gap-1"
-          >
-            <Video className="h-4 w-4" />
-            视频播放器
-            {videoViewerApp && (
-              <Button
-                variant="ghost" 
-                size="sm"
-                className="h-5 px-1 py-0 text-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearVideoViewer();
-                }}
-                title="清除视频播放器设置"
-              >
-                ×
-              </Button>
-            )}
-          </Button>
-          <div
-            className="flex items-center gap-2 rounded border border-neutral-200 px-2 py-1"
-            title="关闭后不再生成缩略图"
-          >
-            <span className="text-xs text-neutral-600 whitespace-nowrap">缩略图</span>
-            <Switch
-              checked={showThumbnails}
-              onCheckedChange={(checked) => {
-                setShowThumbnails(checked);
-                if (!checked) {
-                  clearThumbnailCache();
-                  atomStore.set(getProfileSelectedThumbnailAtom(profileId), null);
-                }
-              }}
-            />
-          </div>
           {/* 当前文件夹显示 */}
           <CurrentFolderDisplay profileId={profileId} onFolderClick={onOpenFolder} />
         </div>
