@@ -1,0 +1,19 @@
+# rule-system Specification
+
+## Purpose
+TBD - created by archiving change add-cursor-rules-specs. Update Purpose after archive.
+## Requirements
+### Requirement: 规则链按配置顺序执行
+系统 MUST 按配置中的规则顺序依次执行重命名规则。
+
+#### Scenario: 多条规则组合
+- **当** 用户配置多条规则并执行重命名
+- **那么** 文件名应按规则顺序逐步变换
+
+### Requirement: 规则执行上下文包含显示顺序索引
+系统 MUST 在规则执行上下文中提供文件信息与显示顺序索引。
+
+#### Scenario: 列表映射规则依赖显示顺序
+- **当** 列表映射规则执行时
+- **那么** 应使用显示顺序索引匹配列表中的目标名称
+
