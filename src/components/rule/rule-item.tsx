@@ -10,6 +10,9 @@ import {
 import { Switch } from '../ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { RULE_MAP_TYPE, type RuleMapInfo } from '@/lib/rules';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { IconGripVertical } from '@tabler/icons-react';
 
 export interface RuleItemProps {
   rule: Rule;
@@ -53,6 +56,22 @@ export const RuleItem: FC<RuleItemProps> = ({
     return null;
   }, [rule]);
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: rule.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
   function handleDel() {
     onDel?.();
   }
@@ -60,7 +79,24 @@ export const RuleItem: FC<RuleItemProps> = ({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="grid min-h-8 w-full grid-cols-[25%_100px_1fr_3rem] divide-x break-all text-sm hover:bg-neutral-100 allow-context-menu">
+        <div
+          ref={setNodeRef}
+          style={style}
+          className="grid min-h-8 w-full grid-cols-[2.5rem_25%_100px_1fr_3rem] divide-x break-all text-sm hover:bg-neutral-100 allow-context-menu"
+        >
+          <div className="flex size-full items-center justify-center">
+            <button
+              type="button"
+              ref={setActivatorNodeRef}
+              {...attributes}
+              {...listeners}
+              className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+              aria-label="拖拽排序"
+              title="拖拽排序"
+            >
+              <IconGripVertical className="h-4 w-4" />
+            </button>
+          </div>
           <span className="flex size-full items-center px-2 py-1">
             <span>{rule.name}</span>
           </span>

@@ -19,13 +19,28 @@ import {
   type Rule,
   RULE_REPLACE_TYPE,
 } from '@/lib/rule';
-import { updateProfile } from '@/lib/profile';
+import { updateProfile, type Profile } from '@/lib/profile';
 import { QueryType } from '@/lib/query';
 import { ScrollArea } from '../ui/scroll-area';
 import { RuleEditDialog } from './rule-edit-dialog';
 import { RuleMapSecondaryEditDialog } from './rule-map-secondary-edit-dialog';
 import { RULE_MAP_TYPE, type RuleMapInfo, saveGlobalMapLists } from '@/lib/rules';
 import { RuleNameInputDialog } from './rule-name-input-dialog';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 
 /**
  * 获取规则的默认名称
@@ -188,6 +203,22 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
     },
   });
 
+  const { mutate: reorderRules } = useMutation({
+    mutationFn: async (nextRules: Rule[]) => {
+      return updateProfile(profileId, {
+        rules: nextRules,
+      });
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryType.Profile, { id: profileId }],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryType.FileItemInfo, { profileId }],
+      });
+    },
+  });
+
   const form = useForm<Rule>({
     defaultValues: {
       id: '',
@@ -197,6 +228,13 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
       enabled: true,
     } as Rule,
   });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   function handleAddRule() {
     setAddRuleDialogOpened(true);
@@ -311,6 +349,35 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
     setRenameRuleDialogOpened(false);
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    if (!profile) {
+      return;
+    }
+
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const oldIndex = profile.rules.findIndex((rule) => rule.id === active.id);
+    const newIndex = profile.rules.findIndex((rule) => rule.id === over.id);
+
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+
+    const nextRules = arrayMove(profile.rules, oldIndex, newIndex);
+
+    queryClient.setQueryData(
+      [QueryType.Profile, { id: profileId }],
+      (currentProfile: Profile | undefined) =>
+        currentProfile ? { ...currentProfile, rules: nextRules } : currentProfile,
+    );
+
+    reorderRules(nextRules);
+  }
+
   useEffect(() => {
     if (!addRuleDialogOpened) {
       getRuleTypeDefaultValue(RULE_REPLACE_TYPE).then(defaultValue => {
@@ -327,7 +394,8 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
             添加规则
           </Button>
         </div>
-        <div className="grid h-8 grid-cols-[25%_100px_1fr_3rem] divide-x divide-neutral-300 rounded-t bg-neutral-200 text-sm">
+        <div className="grid h-8 grid-cols-[2.5rem_25%_100px_1fr_3rem] divide-x divide-neutral-300 rounded-t bg-neutral-200 text-sm">
+          <span className="flex size-full items-center justify-center" />
           <span className="flex size-full items-center px-2">名称</span>
           <span className="flex size-full items-center justify-center px-2">
             规则
@@ -336,23 +404,34 @@ export const RulesPanel: FC<RulesPanelProps> = ({ profileId }) => {
           <div />
         </div>
         <ScrollArea className="h-[calc(100%-5rem)] w-full rounded-b border border-t-0">
-          <div className="w-full divide-y">
-            {profile?.rules?.map((rule) => {
-              return (
-                <RuleItem
-                  key={rule.id}
-                  rule={rule}
-                  onDel={() => deleteRule(rule.id)}
-                  onSwitch={(checked) =>
-                    updateRuleChecked({ ruleId: rule.id, checked })
-                  }
-                  onEdit={() => setTargetEditRule(rule)}
-                  onSecondaryEdit={() => handleSecondaryEdit(rule)}
-                  onRename={() => handleRename(rule)}
-                />
-              );
-            })}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={profile?.rules?.map((rule) => rule.id) ?? []}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="w-full divide-y">
+                {profile?.rules?.map((rule) => {
+                  return (
+                    <RuleItem
+                      key={rule.id}
+                      rule={rule}
+                      onDel={() => deleteRule(rule.id)}
+                      onSwitch={(checked) =>
+                        updateRuleChecked({ ruleId: rule.id, checked })
+                      }
+                      onEdit={() => setTargetEditRule(rule)}
+                      onSecondaryEdit={() => handleSecondaryEdit(rule)}
+                      onRename={() => handleRename(rule)}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
         </ScrollArea>
       </div>
       <Dialog open={addRuleDialogOpened} onOpenChange={setAddRuleDialogOpened}>

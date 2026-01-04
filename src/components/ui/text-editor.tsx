@@ -19,6 +19,9 @@ export interface TextEditorProps {
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
+  language?: string;
+  wordWrap?: 'on' | 'off';
+  lineNumbers?: 'on' | 'off';
 }
 
 export interface TextEditorHandle {
@@ -37,7 +40,10 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
   onScroll,
   placeholder = '',
   className = '',
-  style = {}
+  style = {},
+  language = 'plaintext',
+  wordWrap = 'off',
+  lineNumbers = 'off',
 }, ref) => {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | undefined>();
   const monacoEl = useRef<HTMLDivElement>(null);
@@ -93,12 +99,12 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
         const isProdTauri = isProductionTauri();
         const editorConfig: monaco.editor.IStandaloneEditorConstructionOptions = {
           value: value || '',
-          language: 'plaintext',
+          language,
           theme: 'vs',
           automaticLayout: true,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
-          wordWrap: 'off',
+          wordWrap,
           fontSize: 14,
           lineHeight: 24,
           padding: { top: 8, bottom: 8 },
@@ -106,12 +112,11 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
           multiCursorModifier: 'ctrlCmd',
           selectionHighlight: true,
           occurrencesHighlight: 'singleFile',
-          // 隐藏行号（因为我们有自定义的行号区域）
-          lineNumbers: 'off',
+          lineNumbers,
           glyphMargin: false,
           folding: false,
-          lineDecorationsWidth: 0,
-          lineNumbersMinChars: 0,
+          lineDecorationsWidth: lineNumbers === 'on' ? 10 : 0,
+          lineNumbersMinChars: lineNumbers === 'on' ? 3 : 0,
           // 确保光标可见性
           cursorStyle: 'line',
           cursorWidth: isProdTauri ? 3 : 2, // 在生产环境中使用更粗的光标
